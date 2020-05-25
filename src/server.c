@@ -2949,6 +2949,8 @@ void initServer(void) {
  * Thread Local Storage initialization collides with dlopen call.
  * see: https://sourceware.org/bugzilla/show_bug.cgi?id=19329 */
 void InitServerLast() {
+
+    // 启动后台线程，目前是3个后台线程 bio_close_file  bio_aof_fsync bio_lazy_free 
     bioInit();
     initThreadedIO();
     set_jemalloc_bg_thread(server.jemalloc_bg_thread);
@@ -5007,7 +5009,7 @@ int main(int argc, char **argv) {
     getRandomBytes(hashseed,sizeof(hashseed));
     dictSetHashFunctionSeed(hashseed);
     server.sentinel_mode = checkForSentinelMode(argc,argv);
-    initServerConfig();
+    initServerConfig();  // 加载用户自定义的配置
     ACLInit(); /* The ACL subsystem must be initialized ASAP because the
                   basic networking code and client creation depends on it. */
     moduleInitModulesSystem();
@@ -5023,6 +5025,9 @@ int main(int argc, char **argv) {
     /* We need to init sentinel right now as parsing the configuration file
      * in sentinel mode will have the effect of populating the sentinel
      * data structures with master nodes to monitor. */
+    /*
+     * redis哨兵模式初始化  
+     */
     if (server.sentinel_mode) {
         initSentinelConfig();
         initSentinel();
@@ -5136,7 +5141,9 @@ int main(int argc, char **argv) {
         moduleLoadFromQueue();
         ACLLoadUsersAtStartup();
         InitServerLast();
+        // 开启aof或者rdb持久化时，会尝试从文件中恢复之前的redis数据 
         loadDataFromDisk();
+        // 集群模式下配置文件的检测 
         if (server.cluster_enabled) {
             if (verifyClusterConfigWithData() == C_ERR) {
                 serverLog(LL_WARNING,
@@ -5168,6 +5175,7 @@ int main(int argc, char **argv) {
     }
 
     redisSetCpuAffinity(server.server_cpulist);
+    // 启动eventloop开始接受请求  
     aeMain(server.el);
     aeDeleteEventLoop(server.el);
     return 0;

@@ -1214,7 +1214,7 @@ struct redisServer {
                                       to child process. */
     sds aof_child_diff;             /* AOF diff accumulator child side. */
     /* RDB persistence */
-    long long dirty;                /* Changes to DB from the last save */
+    long long dirty;                /* RDB持久化之后数据有变化，可以看到所有redis写命令都会执行server.dirty++ */
     long long dirty_before_bgsave;  /* Used to restore dirty on failed BGSAVE */
     pid_t rdb_child_pid;            /* PID of RDB saving child */
     struct saveparam *saveparams;   /* Save points array for RDB */
@@ -1448,6 +1448,9 @@ typedef struct pubsubPattern {
 
 typedef void redisCommandProc(client *c);
 typedef int *redisGetKeysProc(struct redisCommand *cmd, robj **argv, int argc, int *numkeys);
+/*
+redis将所有的命令都封装为一个redisCommand结构体，并用函数指针redisCommandProc指向该命令的具体逻辑
+*/
 struct redisCommand {
     char *name;
     redisCommandProc *proc;
