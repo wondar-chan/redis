@@ -44,6 +44,9 @@
 /* Unused arguments generate annoying warnings... */
 #define DICT_NOTUSED(V) ((void) V)
 
+/*
+ * hash表中的实体，保存KV信息  
+ */ 
 typedef struct dictEntry {
     void *key;
     union {
@@ -66,6 +69,9 @@ typedef struct dictType {
 
 /* This is our hash table structure. Every dictionary has two of this as we
  * implement incremental rehashing, for the old to the new table. */
+/* 
+ * 保存每个hashtable的数据信息，当前大小 hash掩码 使用量
+ */
 typedef struct dictht {
     dictEntry **table;
     unsigned long size;

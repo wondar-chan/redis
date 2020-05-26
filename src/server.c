@@ -1683,21 +1683,22 @@ void clientsCron(void) {
     }
 }
 
-/* This function handles 'background' operations we are required to do
- * incrementally in Redis databases, such as active key expiring, resizing,
- * rehashing. */
+/*
+ * 处理一些后台工作的定时任务，比如删除过期key，调整db大小，重新hash
+ */ 
 void databasesCron(void) {
     /* Expire keys by random sampling. Not required for slaves
      * as master will synthesize DELs for us. */
     if (server.active_expire_enabled) {
         if (iAmMaster()) {
+            // 启动expired循环，key过期处理的逻辑都在这里，包含LRU和LFU 
             activeExpireCycle(ACTIVE_EXPIRE_CYCLE_SLOW);
         } else {
             expireSlaveKeys();
         }
     }
 
-    /* Defrag keys gradually. */
+    /* 处理内存碎片，目前还没是实现 */
     activeDefragCycle();
 
     /* Perform hash tables rehashing if needed, but only if there are no
@@ -1829,12 +1830,18 @@ void checkChildrenDone(void) {
  *
  * - Active expired keys collection (it is also performed in a lazy way on
  *   lookup).
- * - Software watchdog.
+ * - 激活过期key的回收 
+ * - Software watchdog. 
+ * - 监控信息 
  * - Update some statistic.
+ * - 更新统计信息  
  * - Incremental rehashing of the DBs hash tables.
+ * - db重hash 
  * - Triggering BGSAVE / AOF rewrite, and handling of terminated children.
- * - Clients timeout of different kinds.
- * - Replication reconnection.
+ * - 触发rdb和aof备份，处理终止的子进程  
+ * - Clients timeout of different kinds. 
+ * - Replication reconnection. 
+ * - 重置链接 
  * - Many more...
  *
  * Everything directly called here will be called server.hz times per second,
@@ -1931,7 +1938,7 @@ int serverCron(struct aeEventLoop *eventLoop, long long id, void *clientData) {
         server.shutdown_asap = 0;
     }
 
-    /* Show some info about non-empty databases */
+    // 每5秒输出一下redis db的统计信息，比如大小，使用量，过期的key数量
     run_with_period(5000) {
         for (j = 0; j < server.dbnum; j++) {
             long long size, used, vkeys;

@@ -79,8 +79,8 @@ typedef struct aeFileEvent {
 /* Time event structure */
 typedef struct aeTimeEvent {
     long long id; /* time event identifier. */
-    long when_sec; /* seconds */
-    long when_ms; /* milliseconds */
+    long when_sec; /* seconds */  // timeEvent下次执行的时间 
+    long when_ms; /* milliseconds */  // timeEvent下次执行的时间 毫秒级，目测是为了支持压秒级的调度  
     aeTimeProc *timeProc;
     aeEventFinalizerProc *finalizerProc;
     void *clientData;

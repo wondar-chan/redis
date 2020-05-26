@@ -608,8 +608,10 @@ typedef struct redisObject {
     unsigned encoding:4;
     unsigned lru:LRU_BITS; /* LRU time (relative to global lru_clock) or
                             * LFU data (least significant 8 bits frequency
-                            * and most significant 16 bits access time). */
-    int refcount;
+                            * and most significant 16 bits access time). 
+                            * redis用24个位来保存LRU和LFU的信息，当使用LRU时保存上次
+                            * 读写的时间戳(秒),使用LFU时保存上次时间戳(16位 min级) 保存近似统计数8位 */
+     int refcount;
     void *ptr;
 } robj;
 

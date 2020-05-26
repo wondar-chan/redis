@@ -51,6 +51,10 @@
  *
  * The parameter 'now' is the current time in milliseconds as is passed
  * to the function to avoid too many gettimeofday() syscalls. */
+/* activeExpireCycle()将存储在hash表中的过期key清理掉，如果发现某个key是过期的，清理掉后返回1，否则返回0。 
+ * 过期key被清理掉后 server.stat_expiredkeys++  
+ */
+
 int activeExpireCycleTryExpire(redisDb *db, dictEntry *de, long long now) {
     long long t = dictGetSignedIntegerVal(de);
     if (now > t) {
@@ -305,9 +309,11 @@ void activeExpireCycle(int type) {
                     break;
                 }
             }
-            /* We don't repeat the cycle for the current database if there are
-             * an acceptable amount of stale keys (logically expired but yet
-             * not reclaimed). */
+            /*
+             * 如果过期key数量超过采样数的10%，再循环做一次采样过期, 
+             * config_cycle_acceptable_stale default值是10，所以是10%的比例，
+             * 该值可以在配置文件里调整(0-9)    
+             */
         } while (sampled == 0 ||
                  (expired*100/sampled) > config_cycle_acceptable_stale);
     }

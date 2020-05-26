@@ -315,6 +315,7 @@ static int processTimeEvents(aeEventLoop *eventLoop) {
         long long id;
 
         /* Remove events scheduled for deletion. */
+        // timeEvent也是lazy_free, 执行时遇到已删除的time_evnet才真正删除  
         if (te->id == AE_DELETED_EVENT_ID) {
             aeTimeEvent *next = te->next;
             /* If a reference exists for this timer event,
@@ -341,12 +342,14 @@ static int processTimeEvents(aeEventLoop *eventLoop) {
          * this iteration. Note that this check is currently useless: we always
          * add new timers on the head, however if we change the implementation
          * detail, this check may be useful again: we keep it here for future
-         * defense. */
+         * defense.
+         * 这里确保timeEvent执行过程中创建的timeEvent不被执行，确保timeEvent链表不会爆掉 */
         if (te->id > maxId) {
             te = te->next;
             continue;
         }
         aeGetTime(&now_sec, &now_ms);
+        // 达到或者超过预定执行时间才可以执行  
         if (now_sec > te->when_sec ||
             (now_sec == te->when_sec && now_ms >= te->when_ms))
         {
@@ -354,10 +357,12 @@ static int processTimeEvents(aeEventLoop *eventLoop) {
 
             id = te->id;
             te->refcount++;
+            // 执行真正的timeEvent 
             retval = te->timeProc(eventLoop, id, te->clientData);
             te->refcount--;
             processed++;
             if (retval != AE_NOMORE) {
+                // 这里把when_sec和when_ms更新为下次执行的时间  
                 aeAddMillisecondsToNow(retval,&te->when_sec,&te->when_ms);
             } else {
                 te->id = AE_DELETED_EVENT_ID;
