@@ -1600,6 +1600,7 @@ void zaddGenericCommand(client *c, int flags) {
     zobj = lookupKeyWrite(c->db,key);
     if (zobj == NULL) {
         if (xx) goto reply_to_client; /* No key + XX option: nothing to do. */
+        // zset在value长度大于64(可配置)，或者zset_max_ziplist_entries为0(默认值128，不让用ziplist，可配)情况下使用跳表
         if (server.zset_max_ziplist_entries == 0 ||
             server.zset_max_ziplist_value < sdslen(c->argv[scoreidx+1]->ptr))
         {

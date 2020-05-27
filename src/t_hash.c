@@ -199,6 +199,10 @@ int hashTypeExists(robj *o, sds field) {
 #define HASH_SET_TAKE_FIELD (1<<0)
 #define HASH_SET_TAKE_VALUE (1<<1)
 #define HASH_SET_COPY 0
+
+/*
+ * hash类型底层有两种实现方式，一种是压缩列表 底层实现是zipList，另外一种是hashTable 底层实现是dict
+ */
 int hashTypeSet(robj *o, sds field, sds value, int flags) {
     int update = 0;
 
@@ -234,9 +238,11 @@ int hashTypeSet(robj *o, sds field, sds value, int flags) {
         o->ptr = zl;
 
         /* Check if the ziplist needs to be converted to a hash table */
+        // 如果ziplist中的值数量超过配置最大值(默认512)就把ziplist转化为hashtable
         if (hashTypeLength(o) > server.hash_max_ziplist_entries)
             hashTypeConvert(o, OBJ_ENCODING_HT);
-    } else if (o->encoding == OBJ_ENCODING_HT) {
+    } else if (o->encoding == OBJ_ENCODING_HT) { 
+        // 如果是hashtable, 就转变为对hashtable的操作 
         dictEntry *de = dictFind(o->ptr,field);
         if (de) {
             sdsfree(dictGetVal(de));
