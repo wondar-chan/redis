@@ -148,6 +148,7 @@ int dictResize(dict *d)
 }
 
 /* Expand or create the hash table */
+// dict的创建和扩张  
 int dictExpand(dict *d, unsigned long size)
 {
     /* the size is invalid if it is smaller than the number of
@@ -156,9 +157,10 @@ int dictExpand(dict *d, unsigned long size)
         return DICT_ERR;
 
     dictht n; /* the new hash table */
+    // 扩容时新table容量是原来的两倍，但有上限 
     unsigned long realsize = _dictNextPower(size);
 
-    /* Rehashing to the same table size is not useful. */
+    // 如果新容量和旧容量一致，没有必要继续执行了，返回err
     if (realsize == d->ht[0].size) return DICT_ERR;
 
     /* Allocate the new hash table and initialize all pointers to NULL */
@@ -169,12 +171,13 @@ int dictExpand(dict *d, unsigned long size)
 
     /* Is this the first initialization? If so it's not really a rehashing
      * we just set the first hash table so that it can accept keys. */
+    // 如果是新创建的情况，直接赋值给ht[0]
     if (d->ht[0].table == NULL) {
         d->ht[0] = n;
         return DICT_OK;
     }
 
-    /* Prepare a second hash table for incremental rehashing */
+    // 非初始化的情况，将新表赋值给ht[1], 然后标记rehashidx 0
     d->ht[1] = n;
     d->rehashidx = 0;
     return DICT_OK;
