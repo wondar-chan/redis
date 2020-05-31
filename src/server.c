@@ -3274,6 +3274,7 @@ void call(client *c, int flags) {
     dirty = server.dirty;
     updateCachedTime(0);
     start = server.ustime;
+    // 执行proc指向的函数指针，也就是具体的command处理逻辑 
     c->cmd->proc(c);
     duration = ustime()-start;
     dirty = server.dirty-dirty;
@@ -3414,14 +3415,18 @@ void call(client *c, int flags) {
  *
  * If C_OK is returned the client is still alive and valid and
  * other operations can be performed by the caller. Otherwise
- * if C_ERR is returned the client was destroyed (i.e. after QUIT). */
+ * if C_ERR is returned the client was destroyed (i.e. after QUIT). 
+ * 处理client发过来的请求 */
 int processCommand(client *c) {
     moduleCallCommandFilters(c);
 
     /* The QUIT command is handled separately. Normal command procs will
      * go through checking for replication and QUIT will cause trouble
      * when FORCE_REPLICATION is enabled and would be implemented in
-     * a regular command proc. */
+     * a regular command proc. 
+     * quit命令也会被redis服务端接收，从源码看起来是什么都没做，服务端处理可以避免
+     * FORCE_REPLICATION开启后导致的问题 ？？ 
+     * */
     if (!strcasecmp(c->argv[0]->ptr,"quit")) {
         addReply(c,shared.ok);
         c->flags |= CLIENT_CLOSE_AFTER_REPLY;
@@ -3429,7 +3434,9 @@ int processCommand(client *c) {
     }
 
     /* Now lookup the command and check ASAP about trivial error conditions
-     * such as wrong arity, bad command name and so forth. */
+     * such as wrong arity, bad command name and so forth. 
+     * 这里是对client的请求解析出对应的redis命令，并校验参数的合法性 */
+
     c->cmd = c->lastcmd = lookupCommand(c->argv[0]->ptr);
     if (!c->cmd) {
         flagTransaction(c);
@@ -3450,7 +3457,7 @@ int processCommand(client *c) {
     }
 
     /* Check if the user is authenticated. This check is skipped in case
-     * the default user is flagged as "nopass" and is active. */
+     * the default user is flagged as "nopass" and is active.  */
     int auth_required = (!(DefaultUser->flags & USER_FLAG_NOPASS) ||
                           (DefaultUser->flags & USER_FLAG_DISABLED)) &&
                         !c->authenticated;
@@ -3465,7 +3472,8 @@ int processCommand(client *c) {
     }
 
     /* Check if the user can run this command according to the current
-     * ACLs. */
+     * ACLs.
+     * 如果是开启了ACL，需要对client请求做鉴权 */
     int acl_keypos;
     int acl_retval = ACLCheckCommandPerm(c,&acl_keypos);
     if (acl_retval != ACL_OK) {
@@ -3495,6 +3503,7 @@ int processCommand(client *c) {
     {
         int hashslot;
         int error_code;
+        // 集群模式下，根据key确认可服务的redis节点，如果不是本节点就向client发送重定向信息 
         clusterNode *n = getNodeByQuery(c,c->cmd,c->argv,c->argc,
                                         &hashslot,&error_code);
         if (n == NULL || n != server.cluster->myself) {
@@ -3648,7 +3657,7 @@ int processCommand(client *c) {
         return C_OK;
     }
 
-    /* Exec the command */
+    /* 做完准备工作，最后执行命令 */
     if (c->flags & CLIENT_MULTI &&
         c->cmd->proc != execCommand && c->cmd->proc != discardCommand &&
         c->cmd->proc != multiCommand && c->cmd->proc != watchCommand)

@@ -5735,7 +5735,9 @@ clusterNode *getNodeByQuery(client *c, struct redisCommand *cmd, robj **argv, in
  * If CLUSTER_REDIR_ASK or CLUSTER_REDIR_MOVED error codes
  * are used, then the node 'n' should not be NULL, but should be the
  * node we want to mention in the redirection. Moreover hashslot should
- * be set to the hash slot that caused the redirection. */
+ * be set to the hash slot that caused the redirection. 
+ * 根据不同的error_code给客户端返回相应的提示信息  
+ * */
 void clusterRedirectClient(client *c, clusterNode *n, int hashslot, int error_code) {
     if (error_code == CLUSTER_REDIR_CROSS_SLOT) {
         addReplySds(c,sdsnew("-CROSSSLOT Keys in request don't hash to the same slot\r\n"));
@@ -5801,6 +5803,10 @@ int clusterRedirectBlockedClientIfNeeded(client *c) {
             /* We send an error and unblock the client if:
              * 1) The slot is unassigned, emitting a cluster down error.
              * 2) The slot is not handled by this node, nor being imported. */
+            /* 如果key对应的slot不是自己，有两种情况
+             * 1. 对应的slot未分配，返回CLUSTER_REDIR_DOWN_UNBOUND
+             * 2. 返回重定向信息，包含重定向的节点信息和slot  
+             */
             if (node != myself &&
                 server.cluster->importing_slots_from[slot] == NULL)
             {

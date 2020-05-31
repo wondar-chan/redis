@@ -323,7 +323,9 @@ void addReply(client *c, robj *obj) {
 }
 
 /* Add the SDS 's' string to the client output buffer, as a side effect
- * the SDS string is freed. */
+ * the SDS string is freed. */ 
+/* 将需要返回的消息加到client的buffer中
+ */ 
 void addReplySds(client *c, sds s) {
     if (prepareClientToWrite(c) != C_OK) {
         /* The caller expects the sds to be free'd. */

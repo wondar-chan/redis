@@ -140,13 +140,13 @@ typedef struct clusterNode {
 typedef struct clusterState {
     clusterNode *myself;  /* This node */
     uint64_t currentEpoch;
-    int state;            /* CLUSTER_OK, CLUSTER_FAIL, ... */
+    int state;            /* 集群当前的状态*/
     int size;             /* Num of master nodes with at least one slot */
     dict *nodes;          /* Hash table of name -> clusterNode structures */
     dict *nodes_black_list; /* Nodes we don't re-add for a few seconds. */
     clusterNode *migrating_slots_to[CLUSTER_SLOTS];
     clusterNode *importing_slots_from[CLUSTER_SLOTS];
-    clusterNode *slots[CLUSTER_SLOTS];
+    clusterNode *slots[CLUSTER_SLOTS];  // 集群模式下，redis会将key通过crc16映射到2^14个slot上，每个slot对应一个集群节点 
     uint64_t slots_keys_count[CLUSTER_SLOTS];
     rax *slots_to_keys;
     /* The following fields are used to take the slave state on elections. */
