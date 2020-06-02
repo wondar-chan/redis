@@ -314,7 +314,9 @@ unsigned long LFUTimeElapsed(unsigned long ldt) {
 }
 
 /* Logarithmically increment a counter. The greater is the current counter value
- * the less likely is that it gets really implemented. Saturate it at 255. */
+ * the less likely is that it gets really implemented. Saturate it at 255. 
+ * 更新lfu的counter，counter并不是一个准确的数值，而是概率增长，counter的数值越大其增长速度越慢
+ * 只能反映出某个时间窗口的热度，无法反映出具体访问次数 */
 uint8_t LFULogIncr(uint8_t counter) {
     if (counter == 255) return 255;
     double r = (double)rand()/RAND_MAX;
@@ -334,7 +336,9 @@ uint8_t LFULogIncr(uint8_t counter) {
  *
  * This function is used in order to scan the dataset for the best object
  * to fit: as we check for the candidate, we incrementally decrement the
- * counter of the scanned objects if needed. */
+ * counter of the scanned objects if needed. 
+ * lfu counter衰减逻辑, lfu_decay_time是指多久counter衰减1，比如lfu_decay_time == 10
+ * 表示每10分钟counter衰减一，但lfu_decay_time为0时counter不衰减 */
 unsigned long LFUDecrAndReturn(robj *o) {
     unsigned long ldt = o->lru >> 8;
     unsigned long counter = o->lru & 255;

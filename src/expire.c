@@ -63,8 +63,10 @@ int activeExpireCycleTryExpire(redisDb *db, dictEntry *de, long long now) {
 
         propagateExpire(db,keyobj,server.lazyfree_lazy_expire);
         if (server.lazyfree_lazy_expire)
+            // 异步删除 
             dbAsyncDelete(db,keyobj);
         else
+            // 同步删除
             dbSyncDelete(db,keyobj);
         notifyKeyspaceEvent(NOTIFY_EXPIRED,
             "expired",keyobj,db->id);

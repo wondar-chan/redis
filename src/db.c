@@ -46,6 +46,7 @@ int keyIsExpired(redisDb *db, robj *key);
 void updateLFU(robj *val) {
     unsigned long counter = LFUDecrAndReturn(val);
     counter = LFULogIncr(counter);
+    // val->lru是个24位整数，高16位是分钟级的时间戳，低8位是count
     val->lru = (LFUGetTimeInMinutes()<<8) | counter;
 }
 

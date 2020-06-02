@@ -59,9 +59,14 @@ int dbAsyncDelete(redisDb *db, robj *key) {
     /* If the value is composed of a few allocations, to free in a lazy way
      * is actually just slower... So under a certain limit we just free
      * the object synchronously. */
+    /*
+    * 在字典中摘除这个key(没有真正删除，只是查不到而已)，如果被摘除的dictEntry不为
+    * 空就去执行下面的释放逻辑 
+    */
     dictEntry *de = dictUnlink(db->dict,key->ptr);
     if (de) {
         robj *val = dictGetVal(de);
+        /* lazy_free并不是完全异步的，而是先评估释放操作所需工作量，如果影响较小就直接在主线程中删除了 */
         size_t free_effort = lazyfreeGetFreeEffort(val);
 
         /* If releasing the object is too much work, do it in the background
@@ -71,7 +76,9 @@ int dbAsyncDelete(redisDb *db, robj *key) {
          * of parts of the Redis core may call incrRefCount() to protect
          * objects, and then call dbDelete(). In this case we'll fall
          * through and reach the dictFreeUnlinkedEntry() call, that will be
-         * equivalent to just calling decrRefCount(). */
+         * equivalent to just calling decrRefCount(). 
+         * 如果释放这个对象需要做大量的工作，就把他放到异步线程里做
+         * 但如果这个对象是共享对象(refcount > 1)就不能直接释放了 */
         if (free_effort > LAZYFREE_THRESHOLD && val->refcount == 1) {
             atomicIncr(lazyfree_objects,1);
             bioCreateBackgroundJob(BIO_LAZY_FREE,val,NULL,NULL);
@@ -79,8 +86,7 @@ int dbAsyncDelete(redisDb *db, robj *key) {
         }
     }
 
-    /* Release the key-val pair, or just the key if we set the val
-     * field to NULL in order to lazy free it later. */
+    /* 释放键值对所占用的内存，如果是lazyFree，val已经是null了，只需要释放key的内存即可 */
     if (de) {
         dictFreeUnlinkedEntry(db->dict,de);
         if (server.cluster_enabled) slotToKeyDel(key->ptr);
