@@ -1345,7 +1345,7 @@ int rdbSaveBackground(char *filename, rdbSaveInfo *rsi) {
     server.dirty_before_bgsave = server.dirty;
     server.lastbgsave_try = time(NULL);
     openChildInfoPipe();
-
+    // 创建子进程保存rdb  
     if ((childpid = redisFork()) == 0) {
         int retval;
 
@@ -2556,6 +2556,7 @@ void saveCommand(client *c) {
 }
 
 /* BGSAVE [SCHEDULE] */
+/* 生成rdb快照 */
 void bgsaveCommand(client *c) {
     int schedule = 0;
 

@@ -1420,12 +1420,12 @@ int htNeedsResize(dict *dict) {
 
     size = dictSlots(dict);
     used = dictSize(dict);
+    // 如果  
     return (size > DICT_HT_INITIAL_SIZE &&
             (used*100/size < HASHTABLE_MIN_FILL));
 }
 
-/* If the percentage of used slots in the HT reaches HASHTABLE_MIN_FILL
- * we resize the hash table to save memory */
+/* 如果db的中俩hashtable的使用率低于10%(可配)，缩小hashtable至实际使用大小以节省内存 */
 void tryResizeHashTables(int dbid) {
     if (htNeedsResize(server.db[dbid].dict))
         dictResize(server.db[dbid].dict);
@@ -1440,6 +1440,11 @@ void tryResizeHashTables(int dbid) {
  *
  * The function returns 1 if some rehashing was performed, otherwise 0
  * is returned. */
+/* redis采用增量rehash的方式，每个哈希表(ht)都有ht[0]的ht[1], rehash的过程就是
+ * ht[0] ht[1]交替的过程，但时间上redis并不是一次性将所有数据从一个ht切换到另一个ht，
+ * 而是采用增量rehash的方式，就是在读写时，或者是服务空闲时将数据迁移
+ * dictRehashMilliseconds()就是空闲时增量rehash，但每次只会rehash 1ms的时间。
+ */
 int incrementallyRehash(int dbid) {
     /* Keys dictionary */
     if (dictIsRehashing(server.db[dbid].dict)) {
@@ -1698,7 +1703,7 @@ void databasesCron(void) {
         }
     }
 
-    /* 处理内存碎片，目前还没是实现 */
+    /* 处理内存碎片，目前还没有实现 */
     activeDefragCycle();
 
     /* Perform hash tables rehashing if needed, but only if there are no
@@ -1953,7 +1958,7 @@ int serverCron(struct aeEventLoop *eventLoop, long long id, void *clientData) {
         }
     }
 
-    /* Show information about connected clients */
+    /* 每5秒输出客户端连接信息  */
     if (!server.sentinel_mode) {
         run_with_period(5000) {
             serverLog(LL_DEBUG,
@@ -3691,6 +3696,7 @@ void closeListeningSockets(int unlink_unix_socket) {
     }
 }
 
+// 服务停止前做一些收尾工作，比如保存rdb 
 int prepareForShutdown(int flags) {
     int save = flags & SHUTDOWN_SAVE;
     int nosave = flags & SHUTDOWN_NOSAVE;
