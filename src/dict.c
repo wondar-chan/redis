@@ -207,7 +207,8 @@ int dictRehash(dict *d, int n) {
             if (--empty_visits == 0) return 1;
         }
         de = d->ht[0].table[d->rehashidx];
-        /* Move all the keys in this bucket from the old to the new hash HT */
+        /* Move all the keys in this bucket from the old to the new hash HT
+         * 把所有的key从旧的hash桶移到新的hash桶中 */
         while(de) {
             uint64_t h;
 
@@ -226,10 +227,10 @@ int dictRehash(dict *d, int n) {
 
     /* 检测是否已对全表做完了rehash */
     if (d->ht[0].used == 0) {
-        zfree(d->ht[0].table);
-        d->ht[0] = d->ht[1];
+        zfree(d->ht[0].table);  // 释放旧ht所占用的内存空间  
+        d->ht[0] = d->ht[1];  // ht[0]始终是在用ht，ht[1]始终是新ht，ht0全迁移到ht1后会交换下  
         _dictReset(&d->ht[1]);
-        d->rehashidx = -1;
+        d->rehashidx = -1;   
         return 0;
     }
 

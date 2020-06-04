@@ -83,7 +83,7 @@ typedef struct dict {
     dictType *type;
     void *privdata;
     dictht ht[2];
-    long rehashidx; /* rehashing not in progress if rehashidx == -1 */
+    long rehashidx; /* 增量hash过程过程中记录rehash执行到第几个位置了，当rehashidx == -1表示没有在做rehash */
     unsigned long iterators; /* number of iterators currently running */
 } dict;
 

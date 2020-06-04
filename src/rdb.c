@@ -2417,7 +2417,7 @@ void backgroundSaveDoneHandlerSocket(int exitcode, int bysignal) {
     updateSlavesWaitingBgsave((!bysignal && exitcode == 0) ? C_OK : C_ERR, RDB_CHILD_TYPE_SOCKET);
 }
 
-/* When a background RDB saving/transfer terminates, call the right handler. */
+/* 后台线程完成RDB的写磁盘成功或者是向Slave传输成功时调用 */
 void backgroundSaveDoneHandler(int exitcode, int bysignal) {
     switch(server.rdb_child_type) {
     case RDB_CHILD_TYPE_DISK:
@@ -2444,6 +2444,7 @@ void killRDBChild(void) {
 
 /* Spawn an RDB child that writes the RDB to the sockets of the slaves
  * that are currently in SLAVE_STATE_WAIT_BGSAVE_START state. */
+/* 通过sockets将rdb传输给slave，主要是主从之间的全量数据同步 */
 int rdbSaveToSlavesSockets(rdbSaveInfo *rsi) {
     listNode *ln;
     listIter li;
