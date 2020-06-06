@@ -30,7 +30,7 @@
 #include "server.h"
 
 /*-----------------------------------------------------------------------------
- * Set Commands
+ * Set命令 
  *----------------------------------------------------------------------------*/
 
 void sunionDiffGenericCommand(client *c, robj **setkeys, int setnum,

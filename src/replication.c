@@ -47,7 +47,7 @@ int cancelReplicationHandshake(void);
 
 /* We take a global flag to remember if this instance generated an RDB
  * because of replication, so that we can remove the RDB file in case
- * the instance is configured to have no persistence. */
+ * the instance is configured to have no persistence. */s
 int RDBGeneratedByReplication = 0;
 
 /* --------------------------- Utility functions ---------------------------- */
@@ -204,7 +204,9 @@ void feedReplicationBacklogWithObject(robj *o) {
  * as well. This function is used if the instance is a master: we use
  * the commands received by our clients in order to create the replication
  * stream. Instead if the instance is a slave and has sub-slaves attached,
- * we use replicationFeedSlavesFromMaster() */
+ * we use replicationFeedSlavesFromMaster() 
+ * 把写操作同步给slave，
+ */ 
 void replicationFeedSlaves(list *slaves, int dictid, robj **argv, int argc) {
     listNode *ln;
     listIter li;
@@ -3159,7 +3161,7 @@ long long replicationGetSlaveOffset(void) {
 
 /* --------------------------- REPLICATION CRON  ---------------------------- */
 
-/* Replication cron function, called 1 time per second. */
+/* Replication cron function, 1秒执行一次. */
 void replicationCron(void) {
     static long long replication_cron_loops = 0;
 

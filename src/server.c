@@ -3215,7 +3215,7 @@ void preventCommandReplication(client *c) {
     c->flags |= CLIENT_PREVENT_REPL_PROP;
 }
 
-/* Call() is the core of Redis execution of a command.
+/* Call()是redis命令执行的核心方法.
  *
  * The following flags can be passed:
  * CMD_CALL_NONE        No flags.
