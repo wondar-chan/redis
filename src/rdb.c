@@ -1008,10 +1008,9 @@ size_t rdbSavedObjectLen(robj *o, robj *key) {
     return len;
 }
 
-/* Save a key-value pair, with expire time, type, key, value.
- * On error -1 is returned.
- * On success if the key was actually saved 1 is returned, otherwise 0
- * is returned (the key was already expired). */
+/* 保存kv信息，包含过期时间，类型，key和value  
+ * 失败返回-1 
+ * 如果key被保存成功返回1, 否则返回0 (比如key已经过期) */
 int rdbSaveKeyValuePair(rio *rdb, robj *key, robj *val, long long expiretime) {
     int savelru = server.maxmemory_policy & MAXMEMORY_FLAG_LRU;
     int savelfu = server.maxmemory_policy & MAXMEMORY_FLAG_LFU;
@@ -1146,7 +1145,8 @@ ssize_t rdbSaveSingleModuleAux(rio *rdb, int when, moduleType *mt) {
  * Redis I/O channel. On success C_OK is returned, otherwise C_ERR
  * is returned and part of the output, or all the output, can be
  * missing because of I/O errors.
- *
+ * 把Redis中的数据dump下来并传给特定的io通道  
+ * 
  * When the function returns C_ERR and if 'error' is not NULL, the
  * integer pointed by 'error' is set to the value of errno just after the I/O
  * error. */
@@ -1196,6 +1196,7 @@ int rdbSaveRio(rio *rdb, int *error, int rdbflags, rdbSaveInfo *rsi) {
             /* When this RDB is produced as part of an AOF rewrite, move
              * accumulated diff from parent to child while rewriting in
              * order to have a smaller final write. */
+            /* 如果RDB只是为了作为AOF的补充，那么可以把父进程的AOF信息合并进来，以减少最终的写入*/
             if (rdbflags & RDBFLAGS_AOF_PREAMBLE &&
                 rdb->processed_bytes > processed+AOF_READ_DIFF_INTERVAL_BYTES)
             {
@@ -1269,17 +1270,17 @@ werr: /* Write error. */
     return C_ERR;
 }
 
-/* Save the DB on disk. Return C_ERR on error, C_OK on success. */
+/* 把数据保存到磁盘上 Return C_ERR on error, C_OK on success. */
 int rdbSave(char *filename, rdbSaveInfo *rsi) {
     char tmpfile[256];
     char cwd[MAXPATHLEN]; /* Current working dir path for error messages. */
     FILE *fp;
-    rio rdb;
+    rio rdb;  // redis文件IO的封装，有面向对象的意思  
     int error = 0;
 
     snprintf(tmpfile,256,"temp-%d.rdb", (int) getpid());
     fp = fopen(tmpfile,"w");
-    if (!fp) {
+    if (!fp) {  // 打开文件失败 
         char *cwdp = getcwd(cwd,MAXPATHLEN);
         serverLog(LL_WARNING,
             "Failed opening the RDB file %s (in server root dir %s) "
@@ -1301,13 +1302,14 @@ int rdbSave(char *filename, rdbSaveInfo *rsi) {
         goto werr;
     }
 
-    /* Make sure data will not remain on the OS's output buffers */
+    /* 确保操作系统缓冲区没有残余数据  */
     if (fflush(fp) == EOF) goto werr;
     if (fsync(fileno(fp)) == -1) goto werr;
     if (fclose(fp) == EOF) goto werr;
 
     /* Use RENAME to make sure the DB file is changed atomically only
      * if the generate DB file is ok. */
+    // 文件同步完后把临时文件名改为正式文件名 
     if (rename(tmpfile,filename) == -1) {
         char *cwdp = getcwd(cwd,MAXPATHLEN);
         serverLog(LL_WARNING,

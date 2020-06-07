@@ -3742,7 +3742,7 @@ int prepareForShutdown(int flags) {
         redis_fsync(server.aof_fd);
     }
 
-    /* Create a new RDB file before exiting. */
+    /* 服务退出前存一份全量的rdb */
     if ((server.saveparamslen > 0 && !nosave) || save) {
         serverLog(LL_NOTICE,"Saving the final RDB snapshot before exiting.");
         if (server.supervised_mode == SUPERVISED_SYSTEMD)

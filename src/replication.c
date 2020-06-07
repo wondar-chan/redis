@@ -47,7 +47,7 @@ int cancelReplicationHandshake(void);
 
 /* We take a global flag to remember if this instance generated an RDB
  * because of replication, so that we can remove the RDB file in case
- * the instance is configured to have no persistence. */s
+ * the instance is configured to have no persistence. */
 int RDBGeneratedByReplication = 0;
 
 /* --------------------------- Utility functions ---------------------------- */

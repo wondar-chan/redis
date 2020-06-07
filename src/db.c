@@ -512,10 +512,11 @@ int getFlushCommandFlags(client *c, int *flags) {
 /* Flushes the whole server data set. */
 void flushAllDataAndResetRDB(int flags) {
     server.dirty += emptyDb(-1,flags,NULL);
+    // 杀掉rdb子进程 
     if (server.rdb_child_pid != -1) killRDBChild();
     if (server.saveparamslen > 0) {
-        /* Normally rdbSave() will reset dirty, but we don't want this here
-         * as otherwise FLUSHALL will not be replicated nor put into the AOF. */
+        /* rdbSave()会重置dirty值，但我们这里不希望这么做，因为重置dirty后FLUSHALL不
+         * 会传播到副本或者保留到AOF文件中 */ 
         int saved_dirty = server.dirty;
         rdbSaveInfo rsi, *rsiptr;
         rsiptr = rdbPopulateSaveInfo(&rsi);
@@ -552,7 +553,7 @@ void flushdbCommand(client *c) {
 
 /* FLUSHALL [ASYNC]
  *
- * Flushes the whole server data set. */
+ * Flushes the whole server data set. 清空redis所有数据*/
 void flushallCommand(client *c) {
     int flags;
     if (getFlushCommandFlags(c,&flags) == C_ERR) return;
@@ -735,7 +736,7 @@ void scanGenericCommand(client *c, robj *o, unsigned long cursor) {
     /* Set i to the first option argument. The previous one is the cursor. */
     i = (o == NULL) ? 2 : 3; /* Skip the key argument if needed. */
 
-    /* Step 1: Parse options. */
+    /* 步骤 1: 解析参数 */
     while (i < c->argc) {
         j = c->argc - i;
         if (!strcasecmp(c->argv[i]->ptr, "count") && j >= 2) {
@@ -770,7 +771,7 @@ void scanGenericCommand(client *c, robj *o, unsigned long cursor) {
         }
     }
 
-    /* Step 2: Iterate the collection.
+    /* 步骤 2: 迭代集合.
      *
      * Note that if the object is encoded with a ziplist, intset, or any other
      * representation that is not a hash table, we are sure that it is also
@@ -836,7 +837,7 @@ void scanGenericCommand(client *c, robj *o, unsigned long cursor) {
         serverPanic("Not handled encoding in SCAN.");
     }
 
-    /* Step 3: Filter elements. */
+    /* 步骤3: 过滤元素 */
     node = listFirst(keys);
     while (node) {
         robj *kobj = listNodeValue(node);
@@ -858,14 +859,14 @@ void scanGenericCommand(client *c, robj *o, unsigned long cursor) {
             }
         }
 
-        /* Filter an element if it isn't the type we want. */
+        /* 过滤掉我们不想要的类型. */
         if (!filter && o == NULL && typename){
             robj* typecheck = lookupKeyReadWithFlags(c->db, kobj, LOOKUP_NOTOUCH);
             char* type = getObjectTypeName(typecheck);
             if (strcasecmp((char*) typename, type)) filter = 1;
         }
 
-        /* Filter element if it is an expired key. */
+        /* 过滤掉已过期的key */
         if (!filter && o == NULL && expireIfNeeded(c->db, kobj)) filter = 1;
 
         /* Remove the element and its associted value if needed. */
