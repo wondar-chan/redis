@@ -890,6 +890,7 @@ void clientAcceptHandler(connection *conn) {
 }
 
 #define MAX_ACCEPTS_PER_CALL 1000
+/* 接收命令请求，里面会建立conn，创建client */
 static void acceptCommonHandler(connection *conn, int flags, char *ip) {
     client *c;
     UNUSED(ip);
@@ -946,6 +947,7 @@ static void acceptCommonHandler(connection *conn, int flags, char *ip) {
     }
 }
 
+// 建立tcp连接 
 void acceptTcpHandler(aeEventLoop *el, int fd, void *privdata, int mask) {
     int cport, cfd, max = MAX_ACCEPTS_PER_CALL;
     char cip[NET_IP_STR_LEN];
@@ -1271,10 +1273,11 @@ client *lookupClientByID(uint64_t id) {
  * is still valid after the call, C_ERR if it was freed because of some
  * error.  If handler_installed is set, it will attempt to clear the
  * write event.
- *
- * This function is called by threads, but always with handler_installed
- * set to 0. So when handler_installed is set to 0 the function must be
- * thread safe. */
+ * 把缓冲区里的数据写回到client，成功返回C_OK，否则返回C_ERR。
+ * 
+ * 这个方法可能被多线程调用，所以handler_installed参数必须是0，但handler_installed为
+ * 0时必须保证线程安全。 
+ * */
 int writeToClient(client *c, int handler_installed) {
     ssize_t nwritten = 0, totwritten = 0;
     size_t objlen;
@@ -1371,7 +1374,7 @@ int writeToClient(client *c, int handler_installed) {
     return C_OK;
 }
 
-/* Write event handler. Just send data to the client. */
+/* 写事件处理方法，把数据写回client */
 void sendReplyToClient(connection *conn) {
     client *c = connGetPrivateData(conn);
     writeToClient(c,1);
@@ -2895,6 +2898,8 @@ int io_threads_op;      /* IO_THREADS_OP_WRITE or IO_THREADS_OP_READ. */
  * itself. */
 list *io_threads_list[IO_THREADS_MAX_NUM];
 
+/* IO线程主方法，主要是将处理完的请求结果数据写回给client或者是和client做数据交换，
+ * 其主体就是一个死循环  */
 void *IOThreadMain(void *myid) {
     /* The ID is the thread number (from 0 to server.iothreads_num-1), and is
      * used by the thread to just manipulate a single sub-array of clients. */
@@ -2944,7 +2949,7 @@ void *IOThreadMain(void *myid) {
     }
 }
 
-/* Initialize the data structures needed for threaded I/O. */
+/* 初始化IO线程的数据结构 */
 void initThreadedIO(void) {
     io_threads_active = 0; /* We start with threads not active. */
 
@@ -2958,8 +2963,8 @@ void initThreadedIO(void) {
         exit(1);
     }
 
-    /* Spawn and initialize the I/O threads. */
-    for (int i = 0; i < server.io_threads_num; i++) {
+    /* 创建并初始化IO线程 */
+    for (int i = 0; i < server.io_threads_num; i++) { // redis6引入的多线程机制，但目前线程数默认是1 
         /* Things we do for all the threads including the main thread. */
         io_threads_list[i] = listCreate();
         if (i == 0) continue; /* Thread 0 is the main thread. */

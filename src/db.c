@@ -869,7 +869,7 @@ void scanGenericCommand(client *c, robj *o, unsigned long cursor) {
         /* 过滤掉已过期的key */
         if (!filter && o == NULL && expireIfNeeded(c->db, kobj)) filter = 1;
 
-        /* Remove the element and its associted value if needed. */
+        /* 删除因过期而被过滤的数据 */
         if (filter) {
             decrRefCount(kobj);
             listDelNode(keys, node);
