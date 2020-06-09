@@ -155,7 +155,7 @@ int pubsubSubscribeChannel(client *c, robj *channel) {
     if (dictAdd(c->pubsub_channels,channel,NULL) == DICT_OK) {
         retval = 1;
         incrRefCount(channel);
-        /* Add the client to the channel -> list of clients hash table */
+        /* 把client添加到这个channel对应的订阅列表里去 */
         de = dictFind(server.pubsub_channels,channel);
         if (de == NULL) {
             clients = listCreate();
@@ -166,7 +166,7 @@ int pubsubSubscribeChannel(client *c, robj *channel) {
         }
         listAddNodeTail(clients,c);
     }
-    /* Notify the client */
+    /* 通知client */
     addReplyPubsubSubscribed(c,channel);
     return retval;
 }
@@ -306,7 +306,7 @@ int pubsubUnsubscribeAllPatterns(client *c, int notify) {
     return count;
 }
 
-/* Publish a message */
+/* 发布消息 */
 int pubsubPublishMessage(robj *channel, robj *message) {
     int receivers = 0;
     dictEntry *de;
@@ -314,7 +314,7 @@ int pubsubPublishMessage(robj *channel, robj *message) {
     listNode *ln;
     listIter li;
 
-    /* Send to clients listening for that channel */
+    /* 把消息发送给订阅该channel的client */
     de = dictFind(server.pubsub_channels,channel);
     if (de) {
         list *list = dictGetVal(de);
@@ -322,13 +322,13 @@ int pubsubPublishMessage(robj *channel, robj *message) {
         listIter li;
 
         listRewind(list,&li);
-        while ((ln = listNext(&li)) != NULL) {
+        while ((ln = listNext(&li)) != NULL) {  // 订阅者也被存储在dictEntry中
             client *c = ln->value;
             addReplyPubsubMessage(c,channel,message);
             receivers++;
         }
     }
-    /* Send to clients listening to matching channels */
+    /* 发消息给PSUBSCRIBE该channel的client */
     di = dictGetIterator(server.pubsub_patterns_dict);
     if (di) {
         channel = getDecodedObject(channel);
@@ -356,7 +356,7 @@ int pubsubPublishMessage(robj *channel, robj *message) {
 /*-----------------------------------------------------------------------------
  * Pubsub commands implementation
  *----------------------------------------------------------------------------*/
-
+// 订阅某个channel
 void subscribeCommand(client *c) {
     int j;
 
@@ -397,6 +397,7 @@ void punsubscribeCommand(client *c) {
     if (clientSubscriptionsCount(c) == 0) c->flags &= ~CLIENT_PUBSUB;
 }
 
+/* 发布订阅 */
 void publishCommand(client *c) {
     int receivers = pubsubPublishMessage(c->argv[1],c->argv[2]);
     if (server.cluster_enabled)
