@@ -326,6 +326,10 @@ struct redisCommand redisCommandTable[] = {
      "write @list",
      0,NULL,1,1,1,0,0,0},
 
+    {"lpos",lposCommand,-3,
+     "read-only @list",
+     0,NULL,1,1,1,0,0,0},
+
     {"lrem",lremCommand,4,
      "write @list",
      0,NULL,1,1,1,0,0,0},
