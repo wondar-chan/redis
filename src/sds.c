@@ -75,6 +75,7 @@ static inline char sdsReqType(size_t string_size) {
 
 /* Create a new sds string with the content specified by the 'init' pointer
  * and 'initlen'.
+ * 新建一个sds字符串，包含特殊的初始化指针和初始长度  
  * If NULL is used for 'init' the string is initialized with zero bytes.
  * If SDS_NOINIT is used, the buffer is left uninitialized;
  *
@@ -89,6 +90,7 @@ static inline char sdsReqType(size_t string_size) {
 sds sdsnewlen(const void *init, size_t initlen) {
     void *sh;
     sds s;
+    // 根据初始化的长度确定用哪种sdshdr
     char type = sdsReqType(initlen);
     /* Empty strings are usually created in order to append. Use type 8
      * since type 5 is not good at this. */
@@ -144,24 +146,23 @@ sds sdsnewlen(const void *init, size_t initlen) {
     return s;
 }
 
-/* Create an empty (zero length) sds string. Even in this case the string
- * always has an implicit null term. */
+/* 新建一个空的sds字符串，长度为0，空字符串 */
 sds sdsempty(void) {
     return sdsnewlen("",0);
 }
 
-/* Create a new sds string starting from a null terminated C string. */
+/* 将一个C字符串转化为sds字符串 */
 sds sdsnew(const char *init) {
     size_t initlen = (init == NULL) ? 0 : strlen(init);
     return sdsnewlen(init, initlen);
 }
 
-/* Duplicate an sds string. */
+/* 将sds根据其实际长度生成一个新的sds，目的是降低内存的占用 */
 sds sdsdup(const sds s) {
     return sdsnewlen(s, sdslen(s));
 }
 
-/* Free an sds string. No operation is performed if 's' is NULL. */
+/* 释放sds的占用的空间 */
 void sdsfree(sds s) {
     if (s == NULL) return;
     s_free((char*)s-sdsHdrSize(s[-1]));
@@ -186,10 +187,7 @@ void sdsupdatelen(sds s) {
     sdssetlen(s, reallen);
 }
 
-/* Modify an sds string in-place to make it empty (zero length).
- * However all the existing buffer is not discarded but set as free space
- * so that next append operations will not require allocations up to the
- * number of bytes previously available. */
+/* 将sds中的内容清空，但并不会释放其占用的空间，以便下次继续使用 */
 void sdsclear(sds s) {
     sdssetlen(s, 0);
     s[0] = '\0';
@@ -198,9 +196,10 @@ void sdsclear(sds s) {
 /* Enlarge the free space at the end of the sds string so that the caller
  * is sure that after calling this function can overwrite up to addlen
  * bytes after the end of the string, plus one more byte for nul term.
- *
+ * 扩大sds的实际可用空间，以便后续能拼接更多字符串。 
  * Note: this does not change the *length* of the sds string as returned
- * by sdslen(), but only the free buffer space we have. */
+ * by sdslen(), but only the free buffer space we have. 
+ * 注意：这里实际不会改变sds的长度，只是增加了更多可用的空间(buf)*/
 sds sdsMakeRoomFor(sds s, size_t addlen) {
     void *sh, *newsh;
     size_t avail = sdsavail(s);
@@ -249,7 +248,7 @@ sds sdsMakeRoomFor(sds s, size_t addlen) {
 /* Reallocate the sds string so that it has no free space at the end. The
  * contained string remains not altered, but next concatenation operations
  * will require a reallocation.
- *
+ * 释放sds占用的多余空间
  * After the call, the passed sds string is no longer valid and all the
  * references must be substituted with the new pointer returned by the call. */
 sds sdsRemoveFreeSpace(sds s) {
@@ -289,12 +288,11 @@ sds sdsRemoveFreeSpace(sds s) {
     return s;
 }
 
-/* Return the total size of the allocation of the specified sds string,
- * including:
- * 1) The sds header before the pointer.
- * 2) The string.
- * 3) The free buffer at the end if any.
- * 4) The implicit null term.
+/* 返回sds总共占用的内存大小 包含：
+ * 1) sds标记
+ * 2) 字符串长度
+ * 3) 剩余未使用的空间 
+ * 4) 隐含的无效内容  
  */
 size_t sdsAllocSize(sds s) {
     size_t alloc = sdsalloc(s);

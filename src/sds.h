@@ -85,12 +85,12 @@ struct __attribute__ ((__packed__)) sdshdr64 {
 #define SDS_TYPE_5_LEN(f) ((f)>>SDS_TYPE_BITS)
 
 static inline size_t sdslen(const sds s) {
-    unsigned char flags = s[-1];
-    switch(flags&SDS_TYPE_MASK) {
+    unsigned char flags = s[-1];  // -1 相当于获取到了sdshdr中的flag字段  
+    switch(flags&SDS_TYPE_MASK) {  
         case SDS_TYPE_5:
             return SDS_TYPE_5_LEN(flags);
         case SDS_TYPE_8:
-            return SDS_HDR(8,s)->len;
+            return SDS_HDR(8,s)->len;  // 宏替换获取到sdshdr中的len
         case SDS_TYPE_16:
             return SDS_HDR(16,s)->len;
         case SDS_TYPE_32:
@@ -101,6 +101,7 @@ static inline size_t sdslen(const sds s) {
     return 0;
 }
 
+// 获取sds剩余可用空间大小 
 static inline size_t sdsavail(const sds s) {
     unsigned char flags = s[-1];
     switch(flags&SDS_TYPE_MASK) {
@@ -151,6 +152,9 @@ static inline void sdssetlen(sds s, size_t newlen) {
     }
 }
 
+/* 
+ * 把sds的长度增加inc 
+ */
 static inline void sdsinclen(sds s, size_t inc) {
     unsigned char flags = s[-1];
     switch(flags&SDS_TYPE_MASK) {
