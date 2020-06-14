@@ -241,15 +241,13 @@ typedef struct sentinelRedisInstance {
 /* Main state. */
 struct sentinelState {
     char myid[CONFIG_RUN_ID_SIZE+1]; /* This sentinel ID. */
-    uint64_t current_epoch;         /* Current epoch. */
-    dict *masters;      /* Dictionary of master sentinelRedisInstances.
-                           Key is the instance name, value is the
-                           sentinelRedisInstance structure pointer. */
-    int tilt;           /* Are we in TILT mode? */
-    int running_scripts;    /* Number of scripts in execution right now. */
-    mstime_t tilt_start_time;       /* When TITL started. */
-    mstime_t previous_time;         /* Last time we ran the time handler. */
-    list *scripts_queue;            /* Queue of user scripts to execute. */
+    uint64_t current_epoch;         /* 当前epoch值 */
+    dict *masters;      /* 主哨兵字典。key是实例名，value是sentinelRedisInstance结构指针。 */
+    int tilt;           /* 是否是TILT模式? */
+    int running_scripts;    /* 正在执行的脚本的数量 */
+    mstime_t tilt_start_time;       /* 进入 TILT 模式的时间 */
+    mstime_t previous_time;         /* 上一次运行的时间点 */
+    list *scripts_queue;            /* 等待执行的用户脚本队列 */
     char *announce_ip;  /* IP addr that is gossiped to other sentinels if
                            not NULL. */
     int announce_port;  /* Port that is gossiped to other sentinels if
@@ -450,6 +448,7 @@ void sentinelSetCommand(client *c);
 void sentinelPublishCommand(client *c);
 void sentinelRoleCommand(client *c);
 
+// 所有哨兵相关的命令 
 struct redisCommand sentinelcmds[] = {
     {"ping",pingCommand,1,"",0,NULL,0,0,0,0,0},
     {"sentinel",sentinelCommand,-2,"",0,NULL,0,0,0,0,0},
@@ -466,19 +465,17 @@ struct redisCommand sentinelcmds[] = {
     {"hello",helloCommand,-2,"no-auth no-script fast",0,NULL,0,0,0,0,0}
 };
 
-/* This function overwrites a few normal Redis config default with Sentinel
- * specific defaults. */
+/* 覆盖哨兵模式的默认配置 */
 void initSentinelConfig(void) {
     server.port = REDIS_SENTINEL_PORT;
     server.protected_mode = 0; /* Sentinel must be exposed. */
 }
 
-/* Perform the Sentinel mode initialization. */
+/* 初始化哨兵模式 */
 void initSentinel(void) {
     unsigned int j;
 
-    /* Remove usual Redis commands from the command table, then just add
-     * the SENTINEL command. */
+    /* 重server.commands中移除不必要的命令，只添加SENTINEL相关命令 */
     dictEmpty(server.commands,NULL);
     for (j = 0; j < sizeof(sentinelcmds)/sizeof(sentinelcmds[0]); j++) {
         int retval;
@@ -859,7 +856,7 @@ void sentinelCollectTerminatedScripts(void) {
             sj->flags &= ~SENTINEL_SCRIPT_RUNNING;
             sj->pid = 0;
             sj->start_time = mstime() +
-                             sentinelScriptRetryDelay(sj->retry_num);
+                             sentinelScriptRetryDelay(sj->retry_num);  // 执行失败重试
         } else {
             /* Otherwise let's remove the script, but log the event if the
              * execution did not terminated in the best of the ways. */
@@ -4493,7 +4490,7 @@ void sentinelHandleRedisInstance(sentinelRedisInstance *ri) {
         sentinelEvent(LL_WARNING,"-tilt",NULL,"#tilt mode exited");
     }
 
-    /* Every kind of instance */
+    /* 检查实例是否主观宕机 */
     sentinelCheckSubjectivelyDown(ri);
 
     /* Masters and slaves */
@@ -4503,6 +4500,7 @@ void sentinelHandleRedisInstance(sentinelRedisInstance *ri) {
 
     /* Only masters */
     if (ri->flags & SRI_MASTER) {
+        /* 检查实例是否客观宕机 */
         sentinelCheckObjectivelyDown(ri);
         if (sentinelStartFailoverIfNeeded(ri))
             sentinelAskMasterStateToOtherSentinels(ri,SENTINEL_ASK_FORCED);
@@ -4537,25 +4535,18 @@ void sentinelHandleDictOfRedisInstances(dict *instances) {
     dictReleaseIterator(di);
 }
 
-/* This function checks if we need to enter the TITL mode.
+/* 检查是否需要进入TITL模式
+ * 
+ * 如果发现两次调用的时间间隔是负数或者间隔时间太大(超过2000ms)，就会进入TITL模式。注：正常情况下，
+ * 每100ms就会执行一次，时间间隔不会太长。 
+ * 以下情况可能会导致进去TITL模式。 
+ * 
+ * 1. sentiel执行过程中被阻塞住了，可能系统负载过高，或者是被其他IO事件阻塞，或者是收到了终止信号 
+ * 2. 系统的适中被更改。 
  *
- * The TILT mode is entered if we detect that between two invocations of the
- * timer interrupt, a negative amount of time, or too much time has passed.
- * Note that we expect that more or less just 100 milliseconds will pass
- * if everything is fine. However we'll see a negative number or a
- * difference bigger than SENTINEL_TILT_TRIGGER milliseconds if one of the
- * following conditions happen:
- *
- * 1) The Sentiel process for some time is blocked, for every kind of
- * random reason: the load is huge, the computer was frozen for some time
- * in I/O or alike, the process was stopped by a signal. Everything.
- * 2) The system clock was altered significantly.
- *
- * Under both this conditions we'll see everything as timed out and failing
- * without good reasons. Instead we enter the TILT mode and wait
- * for SENTINEL_TILT_PERIOD to elapse before starting to act again.
- *
- * During TILT time we still collect information, we just do not act. */
+ * 在这两种情况下，我们会看到一切都超时了，并且毫无理由地失败。
+ * SENTINEL_TILT_PERIOD(30s)的时间后，会跳出TITL模式。
+ * TITL模式下仍会收集信息，但不会执行任何动作 */
 void sentinelCheckTiltCondition(void) {
     mstime_t now = mstime();
     mstime_t delta = now - sentinel.previous_time;
@@ -4569,10 +4560,15 @@ void sentinelCheckTiltCondition(void) {
 }
 
 void sentinelTimer(void) {
+    // 检查是否需要进入TITL模式
     sentinelCheckTiltCondition();
+
     sentinelHandleDictOfRedisInstances(sentinel.masters);
+    // 执行等待运行的脚本
     sentinelRunPendingScripts();
+    // 清理执行完成的脚本，重试执行失败的脚本 
     sentinelCollectTerminatedScripts();
+    // 杀掉执行超时的脚本 
     sentinelKillTimedoutScripts();
 
     /* We continuously change the frequency of the Redis "timer interrupt"

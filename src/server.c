@@ -2053,12 +2053,12 @@ int serverCron(struct aeEventLoop *eventLoop, long long id, void *clientData) {
      * detect transfer failures, start background RDB transfers and so forth. */
     run_with_period(1000) replicationCron();
 
-    /* Run the Redis Cluster cron. */
+    /* 执行集群定时任务 */
     run_with_period(100) {
         if (server.cluster_enabled) clusterCron();
     }
 
-    /* Run the Sentinel timer if we are in sentinel mode. */
+    /* sentinel模式 运行sentinelTimer */
     if (server.sentinel_mode) sentinelTimer();
 
     /* Cleanup expired MIGRATE cached sockets. */
@@ -5053,8 +5053,7 @@ int main(int argc, char **argv) {
 
     /* We need to init sentinel right now as parsing the configuration file
      * in sentinel mode will have the effect of populating the sentinel
-     * data structures with master nodes to monitor. */
-    /*
+     * data structures with master nodes to monitor. 
      * redis哨兵模式初始化  
      */
     if (server.sentinel_mode) {

@@ -104,7 +104,9 @@ sds sdsnewlen(const void *init, size_t initlen) {
         init = NULL;
     else if (!init)
         memset(sh, 0, hdrlen+initlen+1);
-    s = (char*)sh+hdrlen;
+    /* 返回的s并不是直接指向sds的指针，而是指向sds中字符串的指针，sds的指针还需要
+     * 根据s和hdrlen计算出来 */
+    s = (char*)sh+hdrlen;  
     fp = ((unsigned char*)s)-1;
     switch(type) {
         case SDS_TYPE_5: {
@@ -170,7 +172,7 @@ void sdsfree(sds s) {
 
 /* Set the sds string length to the length as obtained with strlen(), so
  * considering as content only up to the first null term character.
- *
+ * 按字符串的长度更新sds的长度 
  * This function is useful when the sds string is hacked manually in some
  * way, like in the following example:
  *
@@ -718,18 +720,13 @@ sds sdstrim(sds s, const char *cset) {
     return s;
 }
 
-/* Turn the string into a smaller (or equal) string containing only the
- * substring specified by the 'start' and 'end' indexes.
+/* 
+ * 根据传入的起始和终止位置截取sds的部分子串，起始和终止位置可以是负数，比如-1表示字符串
+ * 最后一个位置，-2是倒数第二个位置……
+ * start和end是闭区间，结果中会包含start和end位置
+ * 字符串字符串是原地更改，原有字符串信息会丢失 
  *
- * start and end can be negative, where -1 means the last character of the
- * string, -2 the penultimate character, and so forth.
- *
- * The interval is inclusive, so the start and end characters will be part
- * of the resulting string.
- *
- * The string is modified in-place.
- *
- * Example:
+ * 例如:
  *
  * s = sdsnew("Hello World");
  * sdsrange(s,1,-1); => "ello World"
@@ -762,14 +759,14 @@ void sdsrange(sds s, ssize_t start, ssize_t end) {
     sdssetlen(s,newlen);
 }
 
-/* Apply tolower() to every character of the sds string 's'. */
+/* 字符串转小写 */
 void sdstolower(sds s) {
     size_t len = sdslen(s), j;
 
     for (j = 0; j < len; j++) s[j] = tolower(s[j]);
 }
 
-/* Apply toupper() to every character of the sds string 's'. */
+/* 字符串转大写 */
 void sdstoupper(sds s) {
     size_t len = sdslen(s), j;
 
