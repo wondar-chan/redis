@@ -60,7 +60,7 @@ int activeExpireCycleTryExpire(redisDb *db, dictEntry *de, long long now) {
     if (now > t) {
         sds key = dictGetKey(de);
         robj *keyobj = createStringObject(key,sdslen(key));
-
+        // 把过期时间传递给slaves和aof文件  
         propagateExpire(db,keyobj,server.lazyfree_lazy_expire);
         if (server.lazyfree_lazy_expire)
             // 异步删除 
@@ -265,7 +265,7 @@ void activeExpireCycle(int type) {
                     dictEntry *de = db->expires->ht[table].table[idx];
                     long long ttl;
 
-                    /* Scan the current bucket of the current table. */
+                    /* 遍历当前bucket中的所有entry*/
                     checked_buckets++;
                     while(de) {
                         /* Get the next entry now since this entry may get

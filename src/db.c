@@ -103,7 +103,8 @@ robj *lookupKeyReadWithFlags(redisDb *db, robj *key, int flags) {
     if (expireIfNeeded(db,key) == 1) {
         /* Key expired. If we are in the context of a master, expireIfNeeded()
          * returns 0 only when the key does not exist at all, so it's safe
-         * to return NULL ASAP. */
+         * to return NULL ASAP.
+         * 在查询的过程中删除已经过期的key  */
         if (server.masterhost == NULL) {
             server.stat_keyspace_misses++;
             notifyKeyspaceEvent(NOTIFY_KEY_MISS, "keymiss", key, db->id);
@@ -267,8 +268,9 @@ int dbExists(redisDb *db, robj *key) {
 
 /* Return a random key, in form of a Redis object.
  * If there are no keys, NULL is returned.
+ * 随机返回redis中存在的key，如果没有返回null
  *
- * The function makes sure to return keys not already expired. */
+ * 此方法确保不会返回已过期的key */
 robj *dbRandomKey(redisDb *db) {
     dictEntry *de;
     int maxtries = 100;

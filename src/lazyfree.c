@@ -52,8 +52,7 @@ size_t lazyfreeGetFreeEffort(robj *obj) {
  * will be reclaimed in a different bio.c thread. */
 #define LAZYFREE_THRESHOLD 64
 int dbAsyncDelete(redisDb *db, robj *key) {
-    /* Deleting an entry from the expires dict will not free the sds of
-     * the key, because it is shared with the main dictionary. */
+    /* 从db->expires中删除key，只是删除其指针而已，并没有删除实际值 */
     if (dictSize(db->expires) > 0) dictDelete(db->expires,key->ptr);
 
     /* If the value is composed of a few allocations, to free in a lazy way

@@ -135,6 +135,7 @@ void bioCreateBackgroundJob(int type, void *arg1, void *arg2, void *arg3) {
     job->arg1 = arg1;
     job->arg2 = arg2;
     job->arg3 = arg3;
+    // 多线程需要加锁，把待处理的job添加到队列末尾
     pthread_mutex_lock(&bio_mutex[type]);
     listAddNodeTail(bio_jobs[type],job);
     bio_pending[type]++;
