@@ -3705,6 +3705,15 @@ void closeListeningSockets(int unlink_unix_socket) {
 
 // 服务停止前做一些收尾工作，比如保存rdb 
 int prepareForShutdown(int flags) {
+    /* When SHUTDOWN is called while the server is loading a dataset in
+     * memory we need to make sure no attempt is performed to save
+     * the dataset on shutdown (otherwise it could overwrite the current DB
+     * with half-read data).
+     *
+     * Also when in Sentinel mode clear the SAVE flag and force NOSAVE. */
+    if (server.loading || server.sentinel_mode)
+        flags = (flags & ~SHUTDOWN_SAVE) | SHUTDOWN_NOSAVE;
+
     int save = flags & SHUTDOWN_SAVE;
     int nosave = flags & SHUTDOWN_NOSAVE;
 
