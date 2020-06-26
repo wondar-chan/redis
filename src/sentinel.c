@@ -1073,6 +1073,7 @@ int sentinelTryConnectionSharing(sentinelRedisInstance *ri) {
         releaseInstanceLink(ri->link,NULL);
         ri->link = match->link;
         match->link->refcount++;
+        dictReleaseIterator(di);
         return C_OK;
     }
     dictReleaseIterator(di);
