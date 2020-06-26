@@ -1685,6 +1685,7 @@ void clientsCron(void) {
         /* The following functions do different service checks on the client.
          * The protocol is that they return non-zero if the client was
          * terminated. */
+        // 检查client是否超时，并关闭掉已超时的client 
         if (clientsCronHandleTimeout(c,now)) continue;
         if (clientsCronResizeQueryBuffer(c)) continue;
         if (clientsCronTrackExpansiveClients(c)) continue;
@@ -2108,8 +2109,8 @@ extern int ProcessingEventsWhileBlocked;
 /* This function gets called every time Redis is entering the
  * main loop of the event driven library, that is, before to sleep
  * for ready file descriptors.
- *
- * Note: This function is (currently) called from two functions:
+ * 这个方法会在每次redis事件循环进入的时候调用 
+ * 注意：这个方法目前会在以下两个方法中调用
  * 1. aeMain - The main server loop
  * 2. processEventsWhileBlocked - Process clients during RDB/AOF load
  *
@@ -2156,7 +2157,8 @@ void beforeSleep(struct aeEventLoop *eventLoop) {
     if (server.cluster_enabled) clusterBeforeSleep();
 
     /* Run a fast expire cycle (the called function will return
-     * ASAP if a fast cycle is not needed). */
+     * ASAP if a fast cycle is not needed).
+     * 快速处理过期的key，只给很小的处理时间 */
     if (server.active_expire_enabled && server.masterhost == NULL)
         activeExpireCycle(ACTIVE_EXPIRE_CYCLE_FAST);
 

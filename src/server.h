@@ -648,7 +648,7 @@ typedef struct redisDb {
     dict *expires;              /* 保存key对应的过去时间 */
     dict *blocking_keys;        /* Keys with clients waiting for data (BLPOP)*/
     dict *ready_keys;           /* Blocked keys that received a PUSH */
-    dict *watched_keys;         /* WATCHED keys for MULTI/EXEC CAS */
+    dict *watched_keys;         /* WATCHED keys for MULTI/EXEC CAS 存储监听key的clients */
     int id;                     /* Database ID */
     long long avg_ttl;          /* Average TTL, just for stats */
     unsigned long expires_cursor; /* 过期删除过程中的下标 */
@@ -1082,7 +1082,7 @@ struct redisServer {
     int sofd;                   /* Unix socket file descriptor */
     int cfd[CONFIG_BINDADDR_MAX];/* Cluster bus listening socket */
     int cfd_count;              /* Used slots in cfd[] */
-    list *clients;              /* List of active clients */
+    list *clients;              /* 所有活跃的client */
     list *clients_to_close;     /* Clients to close asynchronously */
     list *clients_pending_write; /* There is to write or install handler. */
     list *clients_pending_read;  /* Client has pending read socket buffers. */
