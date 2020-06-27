@@ -844,7 +844,7 @@ void blockingPopGenericCommand(client *c, int where) {
         return;
     }
 
-    /* If the list is empty or the key does not exists we must block */
+    /* 如果list是空，或者key不存在，就阻塞 */
     blockForKeys(c,BLOCKED_LIST,c->argv + 1,c->argc - 2,timeout,NULL,NULL);
 }
 

@@ -33,13 +33,15 @@
 
 /* Check if this blocked client timedout (does nothing if the client is
  * not blocked right now). If so send a reply, unblock it, and return 1.
- * Otherwise 0 is returned and no operation is performed. */
+ * Otherwise 0 is returned and no operation is performed.
+ * 检查阻塞的client是否超时，如果没有什么都不做，如果超时，回复client，并去掉阻塞，
+ * 返回1。否则返回0 */
 int checkBlockedClientTimeout(client *c, mstime_t now) {
     if (c->flags & CLIENT_BLOCKED &&
         c->bpop.timeout != 0
         && c->bpop.timeout < now)
     {
-        /* Handle blocking operation specific timeout. */
+        /* 处理阻塞超时. */
         replyToBlockedClientTimedOut(c);
         unblockClient(c);
         return 1;
@@ -92,7 +94,7 @@ int clientsCronHandleTimeout(client *c, mstime_t now_ms) {
 
 #define CLIENT_ST_KEYLEN 16    /* 8 bytes mstime + 8 bytes client ID. */
 
-/* Given client ID and timeout, write the resulting radix tree key in buf. */
+/* 用timeout和client生成radix tree中的key，主要是timeout从小端表示改大端表示法 */ 
 void encodeTimeoutKey(unsigned char *buf, uint64_t timeout, client *c) {
     timeout = htonu64(timeout);
     memcpy(buf,&timeout,sizeof(timeout));
@@ -132,7 +134,8 @@ void removeClientFromTimeoutTable(client *c) {
 }
 
 /* This function is called in beforeSleep() in order to unblock clients
- * that are waiting in blocking operations with a timeout set. */
+ * that are waiting in blocking operations with a timeout set.
+ * 处理那些等待timeout的阻塞请求 client */
 void handleBlockedClientsTimeout(void) {
     if (raxSize(server.clients_timeout_table) == 0) return;
     uint64_t now = mstime();
@@ -143,8 +146,9 @@ void handleBlockedClientsTimeout(void) {
     while(raxNext(&ri)) {
         uint64_t timeout;
         client *c;
+        // 从radix树节点中解析出timeout时间和对应的client指针 
         decodeTimeoutKey(ri.key,&timeout,&c);
-        if (timeout >= now) break; /* All the timeouts are in the future. */
+        if (timeout >= now) break; /* 因为是timeout从大到小遍历，如果说当前节点没有超时，那后面一定也没有超时的了 */
         c->flags &= ~CLIENT_IN_TO_TABLE;
         checkBlockedClientTimeout(c,now);
         raxRemove(server.clients_timeout_table,ri.key,ri.key_len,NULL);

@@ -646,7 +646,7 @@ typedef struct clientReplyBlock {
 typedef struct redisDb {
     dict *dict;                 /* The keyspace for this DB */
     dict *expires;              /* 保存key对应的过去时间 */
-    dict *blocking_keys;        /* Keys with clients waiting for data (BLPOP)*/
+    dict *blocking_keys;        /* key对应的等待数据的client列表 (BLPOP)*/
     dict *ready_keys;           /* Blocked keys that received a PUSH */
     dict *watched_keys;         /* WATCHED keys for MULTI/EXEC CAS 存储监听key的clients */
     int id;                     /* Database ID */
