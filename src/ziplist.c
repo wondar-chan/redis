@@ -190,7 +190,7 @@
 #include "endianconv.h"
 #include "redisassert.h"
 
-#define ZIP_END 255         /* Special "end of ziplist" entry. */
+#define ZIP_END 255         /* 标识ziplist尾部的特殊字符 */
 #define ZIP_BIG_PREVLEN 254 /* Max number of bytes of the previous entry, for
                                the "prevlen" field prefixing each entry, to be
                                represented with just a single byte. Otherwise
@@ -270,15 +270,13 @@
  * get filled by a function in order to operate more easily. */
 typedef struct zlentry {
     unsigned int prevrawlensize; /* Bytes used to encode the previous entry len*/
-    unsigned int prevrawlen;     /* Previous entry len. */
+    unsigned int prevrawlen;     /* 前一个entry占用的长度，主要是为了entry之间跳转 */
     unsigned int lensize;        /* Bytes used to encode this entry type/len.
                                     For example strings have a 1, 2 or 5 bytes
                                     header. Integers always use a single byte.*/
-    unsigned int len;            /* Bytes used to represent the actual entry.
-                                    For strings this is just the string length
-                                    while for integers it is 1, 2, 3, 4, 8 or
-                                    0 (for 4 bit immediate) depending on the
-                                    number range. */
+    unsigned int len;            /* 当前entry的长度，如果是string则表示string的长度，
+                                    如果是整数，则len依赖于具体数值大小。
+                                  */
     unsigned int headersize;     /* prevrawlensize + lensize. */
     unsigned char encoding;      /* Set to ZIP_STR_* or ZIP_INT_* depending on
                                     the entry encoding. However for 4 bits
@@ -574,7 +572,10 @@ void zipEntry(unsigned char *p, zlentry *e) {
     e->p = p;
 }
 
-/* Create a new empty ziplist. */
+/* 创建一个新的ziplist 
+ * zlbytes|zltail|zllen|entry1|entry2|..|entryN|zlend
+ * 占用的空间|尾节点偏移|总结点数|entry|255(标识尾部) 
+ * */
 unsigned char *ziplistNew(void) {
     unsigned int bytes = ZIPLIST_HEADER_SIZE+ZIPLIST_END_SIZE;
     unsigned char *zl = zmalloc(bytes);
@@ -739,7 +740,7 @@ unsigned char *__ziplistDelete(unsigned char *zl, unsigned char *p, unsigned int
     return zl;
 }
 
-/* Insert item at "p". */
+/* 在p位置插入数据 *s. */
 unsigned char *__ziplistInsert(unsigned char *zl, unsigned char *p, unsigned char *s, unsigned int slen) {
     size_t curlen = intrev32ifbe(ZIPLIST_BYTES(zl)), reqlen;
     unsigned int prevlensize, prevlen = 0;
@@ -1164,9 +1165,10 @@ unsigned char *ziplistFind(unsigned char *p, unsigned char *vstr, unsigned int v
     return NULL;
 }
 
-/* Return length of ziplist. */
+/* 返回ziplist的长度. */
 unsigned int ziplistLen(unsigned char *zl) {
     unsigned int len = 0;
+    // 如果zllen字段是小于65535，说明zllen是有效的，直接返回zllen，否则需要遍历获取长度
     if (intrev16ifbe(ZIPLIST_LENGTH(zl)) < UINT16_MAX) {
         len = intrev16ifbe(ZIPLIST_LENGTH(zl));
     } else {
