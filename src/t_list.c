@@ -791,7 +791,7 @@ int serveClientBlockedOnList(client *receiver, robj *key, robj *dstkey, redisDb 
     return C_OK;
 }
 
-/* Blocking RPOP/LPOP */
+/* list的阻塞RPOP/LPOP */
 void blockingPopGenericCommand(client *c, int where) {
     robj *o;
     mstime_t timeout;
@@ -808,7 +808,7 @@ void blockingPopGenericCommand(client *c, int where) {
                 return;
             } else {
                 if (listTypeLength(o) != 0) {
-                    /* Non empty list, this is like a non normal [LR]POP. */
+                    /* 非空队列，直接返回[LR]POP结果. */
                     char *event = (where == LIST_HEAD) ? "lpop" : "rpop";
                     robj *value = listTypePop(o,where);
                     serverAssert(value != NULL);
@@ -837,8 +837,7 @@ void blockingPopGenericCommand(client *c, int where) {
         }
     }
 
-    /* If we are inside a MULTI/EXEC and the list is empty the only thing
-     * we can do is treating it as a timeout (even with timeout 0). */
+    /* 如果是在MULTI/EXEC中使用，且list是空，就当做这次请求超时*/
     if (c->flags & CLIENT_MULTI) {
         addReplyNullArray(c);
         return;

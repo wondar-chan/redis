@@ -76,7 +76,7 @@ zskiplistNode *zslCreateNode(int level, double score, sds ele) {
     return zn;
 }
 
-/* Create a new skiplist. */
+/* 创建跳表 */
 zskiplist *zslCreate(void) {
     int j;
     zskiplist *zsl;

@@ -155,6 +155,9 @@ void execCommand(client *c) {
     }
 
     /* Check if we need to abort the EXEC because:
+     * 检查是否需要取消支持执行EXEC，因为：
+     * 1. 有些key被监听了 
+     * 2. 队列前面的指令执行发生错误 
      * 1) Some WATCHed key was touched.
      * 2) There was a previous error while queueing commands.
      * A failed EXEC in the first case returns a multi bulk nil object
@@ -272,9 +275,9 @@ void watchForKey(client *c, robj *key) {
     while((ln = listNext(&li))) {
         wk = listNodeValue(ln);
         if (wk->db == c->db && equalStringObjects(key,wk->key))
-            return; /* Key already watched */
+            return; /* key已经在client的监听列表中了，直接返回 */
     }
-    /* This key is not already watched in this DB. Let's add it */
+    /* key不在client的监听列表中就添加进去*/
     clients = dictFetchValue(c->db->watched_keys,key);
     if (!clients) {
         clients = listCreate();

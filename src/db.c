@@ -473,9 +473,9 @@ long long dbTotalServerKeyCount() {
  * Every time a DB is flushed the function signalFlushDb() is called.
  *----------------------------------------------------------------------------*/
 
-/* Note that the 'c' argument may be NULL if the key was modified out of
- * a context of a client. */
+/* 注意，client *c 可能是null，因为有可能key是在client上下文之外被修改的 */
 void signalModifiedKey(client *c, redisDb *db, robj *key) {
+    // key被修改了，需要标记下，以防防止CAS事务执行失败 
     touchWatchedKey(db,key);
     trackingInvalidateKey(c,key);
 }

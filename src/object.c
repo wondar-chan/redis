@@ -357,7 +357,7 @@ void incrRefCount(robj *o) {
         }
     }
 }
-
+/* 减少引用计数，如果没有引用了就释放内存空间 */
 void decrRefCount(robj *o) {
     if (o->refcount == 1) {
         switch(o->type) {
