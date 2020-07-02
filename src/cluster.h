@@ -148,7 +148,7 @@ typedef struct clusterState {
     clusterNode *importing_slots_from[CLUSTER_SLOTS];
     clusterNode *slots[CLUSTER_SLOTS];  // 集群模式下，redis会将key通过crc16映射到2^14个slot上，每个slot对应一个集群节点 
     uint64_t slots_keys_count[CLUSTER_SLOTS];
-    rax *slots_to_keys;
+    rax *slots_to_keys;   // 槽位到key的映射 
     /* The following fields are used to take the slave state on elections. */
     mstime_t failover_auth_time; /* Time of previous or next election. */
     int failover_auth_count;    /* Number of votes received so far. */

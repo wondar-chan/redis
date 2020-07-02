@@ -455,7 +455,8 @@ raxNode *raxCompressNode(raxNode *n, unsigned char *s, size_t len, raxNode **chi
  * When instead we stop at a compressed node and *splitpos is zero, it
  * means that the current node represents the key (that is, none of the
  * compressed node characters are needed to represent the key, just all
- * its parents nodes). */
+ * its parents nodes). 
+ * rax查找的底层实现 */
 static inline size_t raxLowWalk(rax *rax, unsigned char *s, size_t len, raxNode **stopnode, raxNode ***plink, int *splitpos, raxStack *ts) {
     raxNode *h = rax->head;
     raxNode **parentlink = &rax->head;
@@ -899,22 +900,19 @@ oom:
     return 0;
 }
 
-/* Overwriting insert. Just a wrapper for raxGenericInsert() that will
- * update the element if there is already one for the same key. */
+/* 在rax中插入数据，s指向key，data指向value， len是data的实际长度，如果插入的key已
+ * 经存在了就覆盖旧的数据，并将旧数据赋值给old指针*/
 int raxInsert(rax *rax, unsigned char *s, size_t len, void *data, void **old) {
     return raxGenericInsert(rax,s,len,data,old,1);
 }
 
-/* Non overwriting insert function: this if an element with the same key
- * exists, the value is not updated and the function returns 0.
- * This is a just a wrapper for raxGenericInsert(). */
+/* 功能和raxInsert差不多，但差别这个函数不会覆盖旧数据 */
 int raxTryInsert(rax *rax, unsigned char *s, size_t len, void *data, void **old) {
     return raxGenericInsert(rax,s,len,data,old,0);
 }
 
-/* Find a key in the rax, returns raxNotFound special void pointer value
- * if the item was not found, otherwise the value associated with the
- * item is returned. */
+/* 在rax中查找key，如果没找到就返回raxNotFound的指针，其指向一个"rax-not-found-pointer"
+ * 的字符串。如果找到了就返回对应的值 */
 void *raxFind(rax *rax, unsigned char *s, size_t len) {
     raxNode *h;
 

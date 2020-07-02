@@ -177,7 +177,7 @@ robj *lookupKeyWriteOrReply(client *c, robj *key, robj *reply) {
 
 /* Add the key to the DB. It's up to the caller to increment the reference
  * counter of the value if needed.
- *
+ * 把key和value加到db里 
  * The program is aborted if the key already exists. */
 void dbAdd(redisDb *db, robj *key, robj *val) {
     sds copy = sdsdup(key->ptr);
@@ -188,6 +188,7 @@ void dbAdd(redisDb *db, robj *key, robj *val) {
         val->type == OBJ_ZSET ||
         val->type == OBJ_STREAM)
         signalKeyAsReady(db, key);
+    // 如果是集群模式，还要把slot和key的关系加上去 
     if (server.cluster_enabled) slotToKeyAdd(key->ptr);
 }
 
@@ -1720,8 +1721,7 @@ unsigned int getKeysInSlot(unsigned int hashslot, robj **keys, unsigned int coun
     return j;
 }
 
-/* Remove all the keys in the specified hash slot.
- * The number of removed items is returned. */
+/* 删除指定slot中的所有key，返回删除key的个数 */
 unsigned int delKeysInSlot(unsigned int hashslot) {
     raxIterator iter;
     int j = 0;

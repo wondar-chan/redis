@@ -97,7 +97,7 @@
 #define RAX_NODE_MAX_SIZE ((1<<29)-1)
 typedef struct raxNode {
     uint32_t iskey:1;     /* 这个节点是否包含key? */
-    uint32_t isnull:1;    /* 分配的值是null (don't store it). */
+    uint32_t isnull:1;    /* 分配的值是null (如果是null的话就不用分配内存存储空数据)). */
     uint32_t iscompr:1;   /* 节点是否是压缩的 */
     uint32_t size:29;     /* 子节点数量，或者是压缩后的字符串长度. */
     /* Data layout is as follows:
@@ -127,7 +127,7 @@ typedef struct raxNode {
      * children, an additional value pointer is present (as you can see
      * in the representation above as "value-ptr" field).
      */
-    unsigned char data[];
+    unsigned char data[];  /* 数据域 */
 } raxNode;
 
 typedef struct rax {

@@ -81,7 +81,7 @@ void moduleCallClusterReceivers(const char *sender_id, uint64_t module_id, uint8
  * Initialization
  * -------------------------------------------------------------------------- */
 
-/* Load the cluster config from 'filename'.
+/* 加载集群的配置.
  *
  * If the file does not exist or is zero-length (this may happen because
  * when we lock the nodes.conf file, we create a zero-length one for the
@@ -648,6 +648,7 @@ static void clusterConnAcceptHandler(connection *conn) {
     connSetReadHandler(conn, clusterReadHandler);
 }
 
+/*处理集群新的请求连接*/
 #define MAX_CLUSTER_ACCEPTS_PER_CALL 1000
 void clusterAcceptHandler(aeEventLoop *el, int fd, void *privdata, int mask) {
     int cport, cfd;
