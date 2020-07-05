@@ -986,7 +986,7 @@ typedef struct rdbSaveInfo {
     /* Used only loading. */
     int repl_id_is_set;  /* True if repl_id field is set. */
     char repl_id[CONFIG_RUN_ID_SIZE+1];     /* Replication ID. */
-    long long repl_offset;                  /* Replication offset. */
+    long long repl_offset;                  /* 副本偏移量. */
 } rdbSaveInfo;
 
 #define RDB_SAVE_INFO_INIT {-1,0,"000000000000000000000000000000",-1}
@@ -1084,7 +1084,7 @@ struct redisServer {
     int cfd_count;              /* Used slots in cfd[] */
     list *clients;              /* 所有活跃的client */
     list *clients_to_close;     /* Clients to close asynchronously */
-    list *clients_pending_write; /* There is to write or install handler. */
+    list *clients_pending_write; /* 服务所有需要回复的client列表 */
     list *clients_pending_read;  /* Client has pending read socket buffers. */
     list *slaves, *monitors;    /* List of slaves and MONITORs */
     client *current_client;     /* Current client executing the command. */
@@ -1221,7 +1221,7 @@ struct redisServer {
     /* RDB persistence */
     long long dirty;                /* RDB持久化之后数据有变化，可以看到所有redis写命令都会执行server.dirty++ */
     long long dirty_before_bgsave;  /* Used to restore dirty on failed BGSAVE */
-    pid_t rdb_child_pid;            /* PID of RDB saving child */
+    pid_t rdb_child_pid;            /* 保存rdb数据的子进程号 */
     struct saveparam *saveparams;   /* Save points array for RDB */
     int saveparamslen;              /* Number of saving points */
     char *rdb_filename;             /* Name of RDB file */
@@ -1265,9 +1265,9 @@ struct redisServer {
     /* Replication (master) */
     char replid[CONFIG_RUN_ID_SIZE+1];  /* My current replication ID. */
     char replid2[CONFIG_RUN_ID_SIZE+1]; /* replid inherited from master*/
-    long long master_repl_offset;   /* My current replication offset */
+    long long master_repl_offset;   /* 当前副本的偏移量 */
     long long second_replid_offset; /* Accept offsets up to this for replid2. */
-    int slaveseldb;                 /* Last SELECTed DB in replication output */
+    int slaveseldb;                 /* 当前需要写入副本的dbid */
     int repl_ping_slave_period;     /* Master pings the slave every N seconds */
     char *repl_backlog;             /* 用于主从部分同步时的环形缓冲队列 */
     long long repl_backlog_size;    /* Backlog circular buffer size */

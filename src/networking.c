@@ -2901,17 +2901,18 @@ int tio_debug = 0;
 
 pthread_t io_threads[IO_THREADS_MAX_NUM];
 pthread_mutex_t io_threads_mutex[IO_THREADS_MAX_NUM];
-_Atomic unsigned long io_threads_pending[IO_THREADS_MAX_NUM];
+_Atomic unsigned long io_threads_pending[IO_THREADS_MAX_NUM]; // 保存线程需要处理的任务数量
 int io_threads_active;  /* Are the threads currently spinning waiting I/O? */
 int io_threads_op;      /* IO_THREADS_OP_WRITE or IO_THREADS_OP_READ. */
 
 /* This is the list of clients each thread will serve when threaded I/O is
  * used. We spawn io_threads_num-1 threads, since one is the main thread
- * itself. */
+ * itself. 
+ * 每个线程需要处理的client列表 */
 list *io_threads_list[IO_THREADS_MAX_NUM];
 
 /* IO线程主方法，主要是将处理完的请求结果数据写回给client或者是和client做数据交换，
- * 其主体就是一个死循环  */
+ * 其主体就是一个死循环 */
 void *IOThreadMain(void *myid) {
     /* The ID is the thread number (from 0 to server.iothreads_num-1), and is
      * used by the thread to just manipulate a single sub-array of clients. */
@@ -2923,12 +2924,12 @@ void *IOThreadMain(void *myid) {
     redisSetCpuAffinity(server.server_cpulist);
 
     while(1) {
-        /* Wait for start */
+        /* io_threads_pending[id]不为0，说明有待处理的任务了 */
         for (int j = 0; j < 1000000; j++) {
             if (io_threads_pending[id] != 0) break;
         }
 
-        /* Give the main thread a chance to stop this thread. */
+        /* 给主线程可以停掉当前线程的机会. */
         if (io_threads_pending[id] == 0) {
             pthread_mutex_lock(&io_threads_mutex[id]);
             pthread_mutex_unlock(&io_threads_mutex[id]);
@@ -3045,7 +3046,8 @@ int handleClientsWithPendingWritesUsingThreads(void) {
     if (processed == 0) return 0; /* Return ASAP if there are no clients. */
 
     /* If I/O threads are disabled or we have few clients to serve, don't
-     * use I/O threads, but thejboring synchronous code. */
+     * use I/O threads, but thejboring synchronous code. 
+     * 如果IO是单线程模式，或者没有足够的待处理任务，就不启用多线程 */
     if (server.io_threads_num == 1 || stopThreadedIOIfNeeded()) {
         return handleClientsWithPendingWrites();
     }
@@ -3060,6 +3062,7 @@ int handleClientsWithPendingWritesUsingThreads(void) {
     listNode *ln;
     listRewind(server.clients_pending_write,&li);
     int item_id = 0;
+    // 将所有待处理的client分散给不同的线程处理 
     while((ln = listNext(&li))) {
         client *c = listNodeValue(ln);
         c->flags &= ~CLIENT_PENDING_WRITE;
@@ -3076,7 +3079,7 @@ int handleClientsWithPendingWritesUsingThreads(void) {
         io_threads_pending[j] = count;
     }
 
-    /* Also use the main thread to process a slice of clients. */
+    /* 当然主线程也要处理一部分的client，io_threads_list[0]*/
     listRewind(io_threads_list[0],&li);
     while((ln = listNext(&li))) {
         client *c = listNodeValue(ln);
@@ -3174,7 +3177,7 @@ int handleClientsWithPendingReadsUsingThreads(void) {
     while(1) {
         unsigned long pending = 0;
         for (int j = 1; j < server.io_threads_num; j++)
-            pending += io_threads_pending[j];
+            pending += io_threads_pending[j];  // pending为0说明所有任务已处理完成 
         if (pending == 0) break;
     }
     if (tio_debug) printf("I/O READ All threads finshed\n");

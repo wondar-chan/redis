@@ -1338,7 +1338,7 @@ werr:
     stopSaving(0);
     return C_ERR;
 }
-
+/* 后台保存rdb信息 */
 int rdbSaveBackground(char *filename, rdbSaveInfo *rsi) {
     pid_t childpid;
 
@@ -1351,7 +1351,7 @@ int rdbSaveBackground(char *filename, rdbSaveInfo *rsi) {
     if ((childpid = redisFork()) == 0) {
         int retval;
 
-        /* Child */
+        /* 子进程 */
         redisSetProcTitle("redis-rdb-bgsave");
         redisSetCpuAffinity(server.bgsave_cpulist);
         retval = rdbSave(filename,rsi);
@@ -1360,7 +1360,7 @@ int rdbSaveBackground(char *filename, rdbSaveInfo *rsi) {
         }
         exitFromChild((retval == C_OK) ? 0 : 1);
     } else {
-        /* Parent */
+        /* 父进程 */
         if (childpid == -1) {
             closeChildInfoPipe();
             server.lastbgsave_status = C_ERR;
@@ -2604,7 +2604,8 @@ void bgsaveCommand(client *c) {
  * that is normally stack-allocated in the caller, returns the populated
  * pointer if the instance has a valid master client, otherwise NULL
  * is returned, and the RDB saving will not persist any replication related
- * information. */
+ * information. 
+ * 填充rdb保存信息，包含选取的dbid，rdb保存时的数据偏移量。*/
 rdbSaveInfo *rdbPopulateSaveInfo(rdbSaveInfo *rsi) {
     rdbSaveInfo rsi_init = RDB_SAVE_INFO_INIT;
     *rsi = rsi_init;
@@ -2615,7 +2616,9 @@ rdbSaveInfo *rdbPopulateSaveInfo(rdbSaveInfo *rsi) {
      * scenario the replication info is useless, because when a slave
      * connects to us, the NULL repl_backlog will trigger a full
      * synchronization, at the same time we will use a new replid and clear
-     * replid2. */
+     * replid2. 
+     * 如果当前实例是master时，需要看下repl_backlong是否是空，如果repl_backlog是空，
+     * 意味着当前实例不在任何副本链中，副本信息是无用的，后续可能从其他节点全量同步一次。*/
     if (!server.masterhost && server.repl_backlog) {
         /* Note that when server.slaveseldb is -1, it means that this master
          * didn't apply any write commands after a full synchronization.
@@ -2627,7 +2630,8 @@ rdbSaveInfo *rdbPopulateSaveInfo(rdbSaveInfo *rsi) {
     }
 
     /* If the instance is a slave we need a connected master
-     * in order to fetch the currently selected DB. */
+     * in order to fetch the currently selected DB. 
+     * 如果当前实例是slave，必须和master同步当前选取的dbid*/
     if (server.master) {
         rsi->repl_stream_db = server.master->db->id;
         return rsi;

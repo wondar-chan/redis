@@ -2200,7 +2200,7 @@ void beforeSleep(struct aeEventLoop *eventLoop) {
     /* Write the AOF buffer on disk */
     flushAppendOnlyFile(0);
 
-    /* Handle writes with pending output buffers. */
+    /* 回复已处理完的请求  */
     handleClientsWithPendingWritesUsingThreads();
 
     /* Close clients that need to be closed asynchronous */
@@ -4853,11 +4853,11 @@ int redisFork() {
     int childpid;
     long long start = ustime();
     if ((childpid = fork()) == 0) {
-        /* Child */
-        closeListeningSockets(0);
+        /* 子进程 */
+        closeListeningSockets(0);  // 子进程不监听socket请求
         setupChildSignalHandlers();
     } else {
-        /* Parent */
+        /* 父进程 */
         server.stat_fork_time = ustime()-start;
         server.stat_fork_rate = (double) zmalloc_used_memory() * 1000000 / server.stat_fork_time / (1024*1024*1024); /* GB per second. */
         latencyAddSampleIfNeeded("fork",server.stat_fork_time/1000);
