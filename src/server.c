@@ -1963,7 +1963,7 @@ int serverCron(struct aeEventLoop *eventLoop, long long id, void *clientData) {
         }
     }
 
-    /* 每5秒输出客户端连接信息  */
+    /* 每5秒输出客户端连接信���  */
     if (!server.sentinel_mode) {
         run_with_period(5000) {
             serverLog(LL_DEBUG,
@@ -3567,7 +3567,8 @@ int processCommand(client *c) {
      * Note that we do not want to reclaim memory if we are here re-entering
      * the event loop since there is a busy Lua script running in timeout
      * condition, to avoid mixing the propagation of scripts with the
-     * propagation of DELs due to eviction. */
+     * propagation of DELs due to eviction. 
+     * 每次执行命令前先检查内存是否充足，如果内存不够就要尝试按配置的淘汰策略淘汰掉一部分内存 */
     if (server.maxmemory && !server.lua_timedout) {
         int out_of_memory = freeMemoryIfNeededAndSafe() == C_ERR;
         /* freeMemoryIfNeeded may flush slave output buffers. This may result

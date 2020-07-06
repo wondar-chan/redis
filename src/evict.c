@@ -52,8 +52,8 @@
 #define EVPOOL_SIZE 16
 #define EVPOOL_CACHED_SDS_SIZE 255
 struct evictionPoolEntry {
-    unsigned long long idle;    /* Object idle time (inverse frequency for LFU) */
-    sds key;                    /* Key name. */
+    unsigned long long idle;    /* 对象的空闲时间 (inverse frequency for LFU) */
+    sds key;                    /* key的名字 */
     sds cached;                 /* Cached SDS object for key name. */
     int dbid;                   /* Key DB number. */
 };
@@ -157,10 +157,11 @@ void evictionPoolAlloc(void) {
  * to populate the evictionPool with a few entries every time we want to
  * expire a key. Keys with idle time smaller than one of the current
  * keys are added. Keys are always added if there are free entries.
- *
+ * 这个方法每次会用一部分要过期的key填充evictionPool 
  * We insert keys on place in ascending order, so keys with the smaller
  * idle time are on the left, and keys with the higher idle time on the
- * right. */
+ * right. 
+ * 是用增序idle(空闲时间)的增序填充的，小的在左大的在右*/
 
 void evictionPoolPopulate(int dbid, dict *sampledict, dict *keydict, struct evictionPoolEntry *pool) {
     int j, k, count;
@@ -186,7 +187,8 @@ void evictionPoolPopulate(int dbid, dict *sampledict, dict *keydict, struct evic
 
         /* Calculate the idle time according to the policy. This is called
          * idle just because the code initially handled LRU, but is in fact
-         * just a score where an higher score means better candidate. */
+         * just a score where an higher score means better candidate. 
+         * 根据key中的LRU信息和具体的配置策略计算idle值 */
         if (server.maxmemory_policy & MAXMEMORY_FLAG_LRU) {
             idle = estimateObjectIdleTime(o);
         } else if (server.maxmemory_policy & MAXMEMORY_FLAG_LFU) {
@@ -494,7 +496,8 @@ int freeMemoryIfNeeded(void) {
 
                 /* We don't want to make local-db choices when expiring keys,
                  * so to start populate the eviction pool sampling keys from
-                 * every DB. */
+                 * every DB. 
+                 * 先从dict中采样key并放到pool中 */
                 for (i = 0; i < server.dbnum; i++) {
                     db = server.db+i;
                     dict = (server.maxmemory_policy & MAXMEMORY_FLAG_ALLKEYS) ?
@@ -506,7 +509,7 @@ int freeMemoryIfNeeded(void) {
                 }
                 if (!total_keys) break; /* No keys to evict. */
 
-                /* Go backward from best to worst element to evict. */
+                /* 从pool中选择最适合淘汰的key. */
                 for (k = EVPOOL_SIZE-1; k >= 0; k--) {
                     if (pool[k].key == NULL) continue;
                     bestdbid = pool[k].dbid;
@@ -519,7 +522,7 @@ int freeMemoryIfNeeded(void) {
                             pool[k].key);
                     }
 
-                    /* Remove the entry from the pool. */
+                    /* 从淘汰池中移除. */
                     if (pool[k].key != pool[k].cached)
                         sdsfree(pool[k].key);
                     pool[k].key = NULL;
@@ -558,7 +561,7 @@ int freeMemoryIfNeeded(void) {
             }
         }
 
-        /* Finally remove the selected key. */
+        /* 从dict中移除选择的key. */
         if (bestkey) {
             db = server.db+bestdbid;
             robj *keyobj = createStringObject(bestkey,sdslen(bestkey));
