@@ -1981,7 +1981,8 @@ int serverCron(struct aeEventLoop *eventLoop, long long id, void *clientData) {
     databasesCron();
 
     /* Start a scheduled AOF rewrite if this was requested by the user while
-     * a BGSAVE was in progress. */
+     * a BGSAVE was in progress. 
+     * 如果没有活跃的子进程，启动的AOF后台重写 */
     if (!hasActiveChildProcess() &&
         server.aof_rewrite_scheduled)
     {
@@ -2017,7 +2018,7 @@ int serverCron(struct aeEventLoop *eventLoop, long long id, void *clientData) {
             }
         }
 
-        /* Trigger an AOF rewrite if needed. */
+        /* 在aof开启且 每秒写入aof 且 aof缓存区大小超过阈值，则开始aof后台写入 */
         if (server.aof_state == AOF_ON &&
             !hasActiveChildProcess() &&
             server.aof_rewrite_perc &&
@@ -2197,7 +2198,7 @@ void beforeSleep(struct aeEventLoop *eventLoop) {
      * client side caching protocol in broadcasting (BCAST) mode. */
     trackingBroadcastInvalidationMessages();
 
-    /* Write the AOF buffer on disk */
+    /* 把aof缓存区写入磁盘 */
     flushAppendOnlyFile(0);
 
     /* 回复已处理完的请求  */

@@ -75,7 +75,7 @@ void aofRewriteBufferReset(void) {
     listSetFreeMethod(server.aof_rewrite_buf_blocks,zfree);
 }
 
-/* Return the current size of the AOF rewrite buffer. */
+/* 当前Aof重写缓冲区的大小  */
 unsigned long aofRewriteBufferSize(void) {
     listNode *ln;
     listIter li;
@@ -1596,10 +1596,11 @@ int rewriteAppendOnlyFileBackground(void) {
     if (hasActiveChildProcess()) return C_ERR;
     if (aofCreatePipes() != C_OK) return C_ERR;
     openChildInfoPipe();
+    /*fork 一个子进程写入aof文件 */
     if ((childpid = redisFork()) == 0) {
         char tmpfile[256];
 
-        /* Child */
+        /* 子进程 */
         redisSetProcTitle("redis-aof-rewrite");
         redisSetCpuAffinity(server.aof_rewrite_cpulist);
         snprintf(tmpfile,256,"temp-rewriteaof-bg-%d.aof", (int) getpid());
@@ -1610,7 +1611,7 @@ int rewriteAppendOnlyFileBackground(void) {
             exitFromChild(1);
         }
     } else {
-        /* Parent */
+        /* 父进程 */
         if (childpid == -1) {
             closeChildInfoPipe();
             serverLog(LL_WARNING,
