@@ -204,7 +204,7 @@ void pushGenericCommand(client *c, int where) {
     }
 
     for (j = 2; j < c->argc; j++) {
-        if (!lobj) {
+        if (!lobj) { // 初次push需要初始化list，创建一个新的quicklist并加入dict中  
             lobj = createQuicklistObject();
             quicklistSetOptions(lobj->ptr, server.list_max_ziplist_size,
                                 server.list_compress_depth);
@@ -846,7 +846,7 @@ void blockingPopGenericCommand(client *c, int where) {
     /* 如果list是空，或者key不存在，就阻塞 */
     blockForKeys(c,BLOCKED_LIST,c->argv + 1,c->argc - 2,timeout,NULL,NULL);
 }
-
+/* 阻塞从队首pop元素，如果list为空则阻塞 */
 void blpopCommand(client *c) {
     blockingPopGenericCommand(c,LIST_HEAD);
 }

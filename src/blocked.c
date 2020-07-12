@@ -552,7 +552,8 @@ void handleClientsBlockedOnKeys(void) {
  * for all the 'numkeys' keys as in the 'keys' argument. When we block for
  * stream keys, we also provide an array of streamID structures: clients will
  * be unblocked only when items with an ID greater or equal to the specified
- * one is appended to the stream. */
+ * one is appended to the stream. 
+ * 将client阻塞在key上，*/
 void blockForKeys(client *c, int btype, robj **keys, int numkeys, mstime_t timeout, robj *target, streamID *ids) {
     dictEntry *de;
     list *l;
@@ -570,14 +571,14 @@ void blockForKeys(client *c, int btype, robj **keys, int numkeys, mstime_t timeo
         if (btype == BLOCKED_STREAM)
             bki->stream_id = ids[j];
 
-        /* If the key already exists in the dictionary ignore it. */
+        /* 添加client到key的映射，如果已有则忽略. */
         if (dictAdd(c->bpop.keys,keys[j],bki) != DICT_OK) {
             zfree(bki);
             continue;
         }
         incrRefCount(keys[j]);
 
-        /* And in the other "side", to map keys -> clients */
+        /* 添加key到client的映射 */
         de = dictFind(c->db->blocking_keys,keys[j]);
         if (de == NULL) {
             int retval;

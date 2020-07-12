@@ -95,7 +95,7 @@ void _quicklistBookmarkDelete(quicklist *ql, quicklistBookmark *bm);
 #define unlikely(x) (x)
 #endif
 
-/* Create a new quicklist.
+/* 创建一个新的quicklist.
  * Free with quicklistRelease(). */
 quicklist *quicklistCreate(void) {
     struct quicklist *quicklist;

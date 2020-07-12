@@ -2088,7 +2088,7 @@ static int updateTlsCfgInt(long long val, long long prev, char **err) {
     return updateTlsCfg(NULL, NULL, err);
 }
 #endif  /* USE_OPENSSL */
-
+// 所有的默认配置 
 standardConfig configs[] = {
     /* Bool configs */
     createBoolConfig("rdbchecksum", NULL, IMMUTABLE_CONFIG, server.rdb_checksum, 1, NULL, NULL),
