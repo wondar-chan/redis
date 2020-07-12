@@ -2185,7 +2185,6 @@ void zunionInterGenericCommand(client *c, robj *dstkey, int op) {
     robj *dstobj;
     zset *dstzset;
     zskiplistNode *znode;
-    int touched = 0;
 
     /* expect setnum input keys to be given */
     if ((getLongFromObjectOrReply(c, c->argv[2], &setnum, NULL) != C_OK))
@@ -2378,26 +2377,23 @@ void zunionInterGenericCommand(client *c, robj *dstkey, int op) {
         serverPanic("Unknown operator");
     }
 
-    if (dbDelete(c->db,dstkey))
-        touched = 1;
     if (dstzset->zsl->length) {
         zsetConvertToZiplistIfNeeded(dstobj,maxelelen);
-        dbAdd(c->db,dstkey,dstobj);
+        setKey(c,c->db,dstkey,dstobj);
         addReplyLongLong(c,zsetLength(dstobj));
-        signalModifiedKey(c,c->db,dstkey);
         notifyKeyspaceEvent(NOTIFY_ZSET,
             (op == SET_OP_UNION) ? "zunionstore" : "zinterstore",
             dstkey,c->db->id);
         server.dirty++;
     } else {
-        decrRefCount(dstobj);
         addReply(c,shared.czero);
-        if (touched) {
+        if (dbDelete(c->db,dstkey)) {
             signalModifiedKey(c,c->db,dstkey);
             notifyKeyspaceEvent(NOTIFY_GENERIC,"del",dstkey,c->db->id);
             server.dirty++;
         }
     }
+    decrRefCount(dstobj);
     zfree(src);
 }
 
