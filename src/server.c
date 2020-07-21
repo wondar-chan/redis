@@ -5233,8 +5233,8 @@ int main(int argc, char **argv) {
             }
         }
     } else {
-        InitServerLast();
-        sentinelIsRunning();
+        InitServerLast();  // 初始化一些后台线程
+        sentinelIsRunning();  // sentinel模式的配置初始化操作  
         if (server.supervised_mode == SUPERVISED_SYSTEMD) {
             redisCommunicateSystemd("STATUS=Ready to accept connections\n");
             redisCommunicateSystemd("READY=1\n");

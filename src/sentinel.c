@@ -201,7 +201,7 @@ typedef struct sentinelRedisInstance {
     mstime_t slave_conf_change_time; /* Last time slave master addr changed. */
 
     /* Master specific. */
-    dict *sentinels;    /* Other sentinels monitoring the same master. */
+    dict *sentinels;    /* 监控同一master的其他sentinel实例 */
     dict *slaves;       /* Slaves for this master instance. */
     unsigned int quorum;/* Number of sentinels that need to agree on failure. */
     int parallel_syncs; /* How many slaves to reconfigure at same time. */
@@ -475,7 +475,7 @@ void initSentinelConfig(void) {
 void initSentinel(void) {
     unsigned int j;
 
-    /* 重server.commands中移除不必要的命令，只添加SENTINEL相关命令 */
+    /* 从server.commands中移除不必要的命令，只添加SENTINEL相关命令 */
     dictEmpty(server.commands,NULL);
     for (j = 0; j < sizeof(sentinelcmds)/sizeof(sentinelcmds[0]); j++) {
         int retval;
@@ -2713,7 +2713,8 @@ int sentinelSendPing(sentinelRedisInstance *ri) {
 }
 
 /* Send periodic PING, INFO, and PUBLISH to the Hello channel to
- * the specified master or slave instance. */
+ * the specified master or slave instance. 
+ * 通过hello通道周期性发送PING  INFO  PUBLISH信息给指定的master或者slave实例 */
 void sentinelSendPeriodicCommands(sentinelRedisInstance *ri) {
     mstime_t now = mstime();
     mstime_t info_period, ping_period;
@@ -3781,10 +3782,8 @@ void sentinelReceiveIsMasterDownReply(redisAsyncContext *c, void *reply, void *p
     }
 }
 
-/* If we think the master is down, we start sending
- * SENTINEL IS-MASTER-DOWN-BY-ADDR requests to other sentinels
- * in order to get the replies that allow to reach the quorum
- * needed to mark the master in ODOWN state and trigger a failover. */
+/* 向其他sentinel实例发送IS-MASTER-DOWN-BY-ADDR请求来询问master的状态，
+ * 目的是确认是否已经达到触发故障转移的master客观宕机数量条件 */
 #define SENTINEL_ASK_FORCED (1<<0)
 void sentinelAskMasterStateToOtherSentinels(sentinelRedisInstance *master, int flags) {
     dictIterator *di;
@@ -3797,7 +3796,7 @@ void sentinelAskMasterStateToOtherSentinels(sentinelRedisInstance *master, int f
         char port[32];
         int retval;
 
-        /* If the master state from other sentinel is too old, we clear it. */
+        /* 如果从其他sentinel实例拿到的master状态太久，直接清理掉 */
         if (elapsed > SENTINEL_ASK_PERIOD*5) {
             ri->flags &= ~SRI_MASTER_DOWN;
             sdsfree(ri->leader);
@@ -4040,7 +4039,7 @@ int sentinelSendSlaveOf(sentinelRedisInstance *ri, char *host, int port) {
     return C_OK;
 }
 
-/* Setup the master state to start a failover. */
+/* 更新master的状态，开始执行故障转移 */
 void sentinelStartFailover(sentinelRedisInstance *master) {
     serverAssert(master->flags & SRI_MASTER);
 
@@ -4054,25 +4053,22 @@ void sentinelStartFailover(sentinelRedisInstance *master) {
     master->failover_state_change_time = mstime();
 }
 
-/* This function checks if there are the conditions to start the failover,
- * that is:
- *
- * 1) Master must be in ODOWN condition.
- * 2) No failover already in progress.
- * 3) No failover already attempted recently.
- *
- * We still don't know if we'll win the election so it is possible that we
- * start the failover but that we'll not be able to act.
- *
- * Return non-zero if a failover was started. */
+/* 
+ * 检查是否需要做故障转移，需要满足以下条件
+ * 1. master必须处于客观宕机状态 
+ * 2. 没有故障转移正在执行 
+ * 3. 当前没有尝试去做故障转移 
+ * 
+ * 因为并不确定是否能赢得选举，所以可能开始做了故障转移但实际并没有起作用
+ * 如果故障转移已经开始，返回非0*/
 int sentinelStartFailoverIfNeeded(sentinelRedisInstance *master) {
-    /* We can't failover if the master is not in O_DOWN state. */
+    /* master是否是客观宕机状态 */
     if (!(master->flags & SRI_O_DOWN)) return 0;
 
-    /* Failover already in progress? */
+    /* 是否已经在执行故障转移? */
     if (master->flags & SRI_FAILOVER_IN_PROGRESS) return 0;
 
-    /* Last failover attempt started too little time ago? */
+    /* 故障转移过程在不久前刚刚尝试启动了? */
     if (mstime() - master->failover_start_time <
         master->failover_timeout*2)
     {
@@ -4499,7 +4495,7 @@ void sentinelHandleRedisInstance(sentinelRedisInstance *ri) {
         /* Nothing so far. */
     }
 
-    /* Only masters */
+    /* 仅对master执行 */
     if (ri->flags & SRI_MASTER) {
         /* 检查实例是否客观宕机 */
         sentinelCheckObjectivelyDown(ri);
