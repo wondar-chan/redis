@@ -3449,7 +3449,8 @@ void rejectCommandFormat(client *c, const char *fmt, ...) {
     sdsfree(s);
 }
 
-/* A command that uses keys but has no pre-determined key position arguments. */
+/* Returns 1 for commands that may have key names in their arguments, but have
+ * no pre-determined key positions. */
 static int cmdHasMovableKeys(struct redisCommand *cmd) {
     return (cmd->getkeys_proc && !(cmd->flags & CMD_MODULE)) ||
             cmd->flags & CMD_MODULE_GETKEYS;
@@ -4909,6 +4910,7 @@ void loadDataFromDisk(void) {
             serverLog(LL_NOTICE,"DB loaded from append only file: %.3f seconds",(float)(ustime()-start)/1000000);
     } else {
         rdbSaveInfo rsi = RDB_SAVE_INFO_INIT;
+        errno = 0; /* Prevent a stale value from affecting error checking */
         if (rdbLoad(server.rdb_filename,&rsi,RDBFLAGS_NONE) == C_OK) {
             serverLog(LL_NOTICE,"DB loaded from disk: %.3f seconds",
                 (float)(ustime()-start)/1000000);
