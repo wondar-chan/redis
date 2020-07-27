@@ -179,6 +179,9 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
+/* 压缩列表的实现，具体可以参考博文：https://segmentfault.com/a/1190000016901154 
+ */
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>

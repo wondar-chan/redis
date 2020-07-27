@@ -1314,6 +1314,7 @@ NULL
         usage += sizeof(dictEntry);
         addReplyLongLong(c,usage);
     } else if (!strcasecmp(c->argv[1]->ptr,"stats") && c->argc == 2) {
+        // 内存统计命令 
         struct redisMemOverhead *mh = getMemoryOverheadData();
 
         addReplyMapLen(c,25+mh->num_dbs);

@@ -565,17 +565,17 @@ void pexpireatCommand(client *c) {
     expireGenericCommand(c,0,UNIT_MILLISECONDS);
 }
 
-/* Implements TTL and PTTL */
+/* 查看key的剩余过期时间 */
 void ttlGenericCommand(client *c, int output_ms) {
     long long expire, ttl = -1;
 
-    /* If the key does not exist at all, return -2 */
+    /* 如果key不存在，直接返回-2 */
     if (lookupKeyReadWithFlags(c->db,c->argv[1],LOOKUP_NOTOUCH) == NULL) {
         addReplyLongLong(c,-2);
         return;
     }
-    /* The key exists. Return -1 if it has no expire, or the actual
-     * TTL value otherwise. */
+    /* 如果key存在，但没有设置过期时间，返回-1，
+     * 否则从expire表里查到它的过期时间，并计算出ttl  */
     expire = getExpire(c->db,c->argv[1]);
     if (expire != -1) {
         ttl = expire-mstime();
@@ -598,7 +598,7 @@ void pttlCommand(client *c) {
     ttlGenericCommand(c, 1);
 }
 
-/* PERSIST key */
+/* 持久化key，取消key的过期时间  */
 void persistCommand(client *c) {
     if (lookupKeyWrite(c->db,c->argv[1])) {
         if (removeExpire(c->db,c->argv[1])) {

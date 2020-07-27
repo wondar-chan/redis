@@ -1963,7 +1963,7 @@ int serverCron(struct aeEventLoop *eventLoop, long long id, void *clientData) {
         }
     }
 
-    /* 每5秒输出客户端连接信���  */
+    /* 每5秒输出客户端连接信息 */
     if (!server.sentinel_mode) {
         run_with_period(5000) {
             serverLog(LL_DEBUG,
