@@ -1300,6 +1300,9 @@ client *lookupClientByID(uint64_t id) {
  * 0时必须保证线程安全。 
  * */
 int writeToClient(client *c, int handler_installed) {
+    /* Update total number of writes on server */
+    server.stat_total_writes_processed++;
+
     ssize_t nwritten = 0, totwritten = 0;
     size_t objlen;
     clientReplyBlock *o;
@@ -1914,6 +1917,9 @@ void readQueryFromClient(connection *conn) {
     /* Check if we want to read from the client later when exiting from
      * the event loop. This is the case if threaded I/O is enabled. */
     if (postponeClientRead(c)) return;
+
+    /* Update total number of reads on server */
+    server.stat_total_reads_processed++;
 
     readlen = PROTO_IOBUF_LEN;
     /* If this is a multi bulk request, and we are processing a bulk reply
@@ -2912,7 +2918,6 @@ int tio_debug = 0;
 pthread_t io_threads[IO_THREADS_MAX_NUM];
 pthread_mutex_t io_threads_mutex[IO_THREADS_MAX_NUM];
 _Atomic unsigned long io_threads_pending[IO_THREADS_MAX_NUM]; // 保存线程需要处理的任务数量
-int io_threads_active;  /* Are the threads currently spinning waiting I/O? */
 int io_threads_op;      /* IO_THREADS_OP_WRITE or IO_THREADS_OP_READ. */
 
 /* This is the list of clients each thread will serve when threaded I/O is
@@ -2974,7 +2979,7 @@ void *IOThreadMain(void *myid) {
 
 /* 初始化IO线程的数据结构 */
 void initThreadedIO(void) {
-    io_threads_active = 0; /* We start with threads not active. */
+    server.io_threads_active = 0; /* We start with threads not active. */
 
     /* Don't spawn any thread if the user selected a single thread:
      * we'll handle I/O directly from the main thread. */
@@ -3008,10 +3013,10 @@ void initThreadedIO(void) {
 void startThreadedIO(void) {
     if (tio_debug) { printf("S"); fflush(stdout); }
     if (tio_debug) printf("--- STARTING THREADED IO ---\n");
-    serverAssert(io_threads_active == 0);
+    serverAssert(server.io_threads_active == 0);
     for (int j = 1; j < server.io_threads_num; j++)
         pthread_mutex_unlock(&io_threads_mutex[j]);
-    io_threads_active = 1;
+    server.io_threads_active = 1;
 }
 
 void stopThreadedIO(void) {
@@ -3022,10 +3027,10 @@ void stopThreadedIO(void) {
     if (tio_debug) printf("--- STOPPING THREADED IO [R%d] [W%d] ---\n",
         (int) listLength(server.clients_pending_read),
         (int) listLength(server.clients_pending_write));
-    serverAssert(io_threads_active == 1);
+    serverAssert(server.io_threads_active == 1);
     for (int j = 1; j < server.io_threads_num; j++)
         pthread_mutex_lock(&io_threads_mutex[j]);
-    io_threads_active = 0;
+    server.io_threads_active = 0;
 }
 
 /* This function checks if there are not enough pending clients to justify
@@ -3044,7 +3049,7 @@ int stopThreadedIOIfNeeded(void) {
     if (server.io_threads_num == 1) return 1;
 
     if (pending < (server.io_threads_num*2)) {
-        if (io_threads_active) stopThreadedIO();
+        if (server.io_threads_active) stopThreadedIO();
         return 1;
     } else {
         return 0;
@@ -3063,7 +3068,7 @@ int handleClientsWithPendingWritesUsingThreads(void) {
     }
 
     /* Start threads if needed. */
-    if (!io_threads_active) startThreadedIO();
+    if (!server.io_threads_active) startThreadedIO();
 
     if (tio_debug) printf("%d TOTAL WRITE pending clients\n", processed);
 
@@ -3121,6 +3126,10 @@ int handleClientsWithPendingWritesUsingThreads(void) {
         }
     }
     listEmpty(server.clients_pending_write);
+
+    /* Update processed count on server */
+    server.stat_io_writes_processed += processed;
+
     return processed;
 }
 
@@ -3129,7 +3138,7 @@ int handleClientsWithPendingWritesUsingThreads(void) {
  * As a side effect of calling this function the client is put in the
  * pending read clients and flagged as such. */
 int postponeClientRead(client *c) {
-    if (io_threads_active &&
+    if (server.io_threads_active &&
         server.io_threads_do_reads &&
         !ProcessingEventsWhileBlocked &&
         !(c->flags & (CLIENT_MASTER|CLIENT_SLAVE|CLIENT_PENDING_READ)))
@@ -3149,7 +3158,7 @@ int postponeClientRead(client *c) {
  * the reads in the buffers, and also parse the first command available
  * rendering it in the client structures. */
 int handleClientsWithPendingReadsUsingThreads(void) {
-    if (!io_threads_active || !server.io_threads_do_reads) return 0;
+    if (!server.io_threads_active || !server.io_threads_do_reads) return 0;
     int processed = listLength(server.clients_pending_read);
     if (processed == 0) return 0;
 
@@ -3210,5 +3219,9 @@ int handleClientsWithPendingReadsUsingThreads(void) {
         }
         processInputBuffer(c);
     }
+
+    /* Update processed count on server */
+    server.stat_io_reads_processed += processed;
+
     return processed;
 }
