@@ -2052,7 +2052,8 @@ int serverCron(struct aeEventLoop *eventLoop, long long id, void *clientData) {
     clientsArePaused(); /* Don't check return value, just use the side effect.*/
 
     /* Replication cron function -- used to reconnect to master,
-     * detect transfer failures, start background RDB transfers and so forth. */
+     * detect transfer failures, start background RDB transfers and so forth.
+     * 每1s执行一次主从同步，重连master，检测是否传输失败，后台传输rdb信息…… */
     run_with_period(1000) replicationCron();
 
     /* 执行集群定时任务 */

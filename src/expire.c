@@ -494,16 +494,13 @@ int checkAlreadyExpired(long long when) {
 }
 
 /*-----------------------------------------------------------------------------
- * Expires Commands
+ * Expires 命令
  *----------------------------------------------------------------------------*/
 
-/* This is the generic command implementation for EXPIRE, PEXPIRE, EXPIREAT
- * and PEXPIREAT. Because the commad second argument may be relative or absolute
- * the "basetime" argument is used to signal what the base time is (either 0
- * for *AT variants of the command, or the current time for relative expires).
- *
- * unit is either UNIT_SECONDS or UNIT_MILLISECONDS, and is only used for
- * the argv[2] parameter. The basetime is always specified in milliseconds. */
+/* 这是EXPIRE命令的通用实现，因为命令的第二个参数可能是相对的，也可能是绝对的，
+ * 所以“basetime”参数被用来表示基准时间是多少(对于这个命令的各种变体，参数要么是0，要么当前时间)
+ * 
+ * 时间单位有秒UNIT_SECONDS 和 毫秒UNIT_MILLISECONDS两种，basetime参数的时间单位始终是秒 */
 void expireGenericCommand(client *c, long long basetime, int unit) {
     robj *key = c->argv[1], *param = c->argv[2];
     long long when; /* unix time in milliseconds when the key will expire. */
@@ -520,9 +517,10 @@ void expireGenericCommand(client *c, long long basetime, int unit) {
         return;
     }
 
+    // 检查设置的时间是否已过期(比如过期时间是否已经过了当前时间)
     if (checkAlreadyExpired(when)) {
         robj *aux;
-
+        // 如果是已过期的时间，需要把这个key安装过期策略删除掉 
         int deleted = server.lazyfree_lazy_expire ? dbAsyncDelete(c->db,key) :
                                                     dbSyncDelete(c->db,key);
         serverAssertWithInfo(c,key,deleted);
@@ -536,6 +534,7 @@ void expireGenericCommand(client *c, long long basetime, int unit) {
         addReply(c, shared.cone);
         return;
     } else {
+        // 没有过期就设置过期时间并回复client 
         setExpire(c,c->db,key,when);
         addReply(c,shared.cone);
         signalModifiedKey(c,c->db,key);
