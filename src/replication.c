@@ -636,7 +636,8 @@ need_full_resync:
  * 2) Flush the Lua scripting script cache if the BGSAVE was actually
  *    started.
  *
- * Returns C_OK on success or C_ERR otherwise. */
+ * Returns C_OK on success or C_ERR otherwise. 
+ * 生成rdb快照，rdb可以同步给slave，也可以写入到文档中，socket_target区分 */ 
 int startBgsaveForReplication(int mincapa) {
     int retval;
     int socket_target = server.repl_diskless_sync && (mincapa & SLAVE_CAPA_EOF);
@@ -715,8 +716,7 @@ void syncCommand(client *c) {
     /* ignore SYNC if already slave or in monitor mode */
     if (c->flags & CLIENT_SLAVE) return;
 
-    /* Refuse SYNC requests if we are a slave but the link with our master
-     * is not ok... */
+    /*  如果是已连接到master的slave实例收到了SYNC命令，则拒绝 */
     if (server.masterhost && server.repl_state != REPL_STATE_CONNECTED) {
         addReplySds(c,sdsnew("-NOMASTERLINK Can't SYNC while not connected with my master\r\n"));
         return;
@@ -788,7 +788,8 @@ void syncCommand(client *c) {
                             server.replid, server.replid2);
     }
 
-    /* CASE 1: BGSAVE is in progress, with disk target. */
+    /* CASE 1: BGSAVE is in progress, with disk target.
+     * 情况1： BGSAVE正在执行中，rdb信息正在写入文件中  */
     if (server.rdb_child_pid != -1 &&
         server.rdb_child_type == RDB_CHILD_TYPE_DISK)
     {
@@ -818,7 +819,8 @@ void syncCommand(client *c) {
             serverLog(LL_NOTICE,"Can't attach the replica to the current BGSAVE. Waiting for next BGSAVE for SYNC");
         }
 
-    /* CASE 2: BGSAVE is in progress, with socket target. */
+    /* CASE 2: BGSAVE is in progress, with socket target. 
+     * 情况2： BGSAVE正在执行中，rdb信息正在写入slave的socket中*/
     } else if (server.rdb_child_pid != -1 &&
                server.rdb_child_type == RDB_CHILD_TYPE_SOCKET)
     {
@@ -827,7 +829,8 @@ void syncCommand(client *c) {
          * in order to synchronize. */
         serverLog(LL_NOTICE,"Current BGSAVE has socket target. Waiting for next BGSAVE for SYNC");
 
-    /* CASE 3: There is no BGSAVE is progress. */
+    /* CASE 3: There is no BGSAVE is progress. 
+     * 情况3： BGSAVE没有在执行，开始将rdb同步给slave */
     } else {
         if (server.repl_diskless_sync && (c->slave_capa & SLAVE_CAPA_EOF)) {
             /* Diskless replication RDB child is created inside
@@ -2115,7 +2118,8 @@ int slaveTryPartialResynchronization(connection *conn, int read_reply) {
 }
 
 /* This handler fires when the non blocking connect was able to
- * establish a connection with the master. */
+ * establish a connection with the master. 
+ * 和master建立连接后第一次做数据同步 */
 void syncWithMaster(connection *conn) {
     char tmpfile[256], *err = NULL;
     int dfd = -1, maxtries = 5;
@@ -2136,7 +2140,7 @@ void syncWithMaster(connection *conn) {
         goto error;
     }
 
-    /* Send a PING to check the master is able to reply without errors. */
+    /* 发送PING并同步等待，以检查master是否能正常回应 */
     if (server.repl_state == REPL_STATE_CONNECTING) {
         serverLog(LL_NOTICE,"Non blocking connect for SYNC fired the event.");
         /* Delete the writable event so that the readable event remains
@@ -2151,7 +2155,7 @@ void syncWithMaster(connection *conn) {
         return;
     }
 
-    /* Receive the PONG command. */
+    /* 接收PONG命令. */
     if (server.repl_state == REPL_STATE_RECEIVE_PONG) {
         err = sendSynchronousCommand(SYNC_CMD_READ,conn,NULL);
 
@@ -2176,7 +2180,7 @@ void syncWithMaster(connection *conn) {
         server.repl_state = REPL_STATE_SEND_AUTH;
     }
 
-    /* AUTH with the master if required. */
+    /* 如果master要求权限验证，向master发送权限验证密码. */
     if (server.repl_state == REPL_STATE_SEND_AUTH) {
         if (server.masteruser && server.masterauth) {
             err = sendSynchronousCommand(SYNC_CMD_WRITE,conn,"AUTH",
@@ -2194,7 +2198,7 @@ void syncWithMaster(connection *conn) {
         }
     }
 
-    /* Receive AUTH reply. */
+    /* 接收权限验证回复. */
     if (server.repl_state == REPL_STATE_RECEIVE_AUTH) {
         err = sendSynchronousCommand(SYNC_CMD_READ,conn,NULL);
         if (err[0] == '-') {
@@ -2206,8 +2210,7 @@ void syncWithMaster(connection *conn) {
         server.repl_state = REPL_STATE_SEND_PORT;
     }
 
-    /* Set the slave port, so that Master's INFO command can list the
-     * slave listening port correctly. */
+    /*  向master传送slave的端口信息，以便在master上可以用INFO命令查看到这些信息 */
     if (server.repl_state == REPL_STATE_SEND_PORT) {
         int port;
         if (server.slave_announce_port) port = server.slave_announce_port;
@@ -2309,6 +2312,8 @@ void syncWithMaster(connection *conn) {
         return;
     }
 
+    /*上面部分完成了和master的握手过程 */ 
+
     /* If reached this point, we should be in REPL_STATE_RECEIVE_PSYNC. */
     if (server.repl_state != REPL_STATE_RECEIVE_PSYNC) {
         serverLog(LL_WARNING,"syncWithMaster(): state machine error, "
@@ -2404,7 +2409,7 @@ error:
     server.repl_transfer_fd = -1;
     server.repl_state = REPL_STATE_CONNECT;
     return;
-
+ 
 write_error: /* Handle sendSynchronousCommand(SYNC_CMD_WRITE) errors. */
     serverLog(LL_WARNING,"Sending command to master in replication handshake: %s", err);
     sdsfree(err);
@@ -2476,7 +2481,7 @@ int cancelReplicationHandshake(void) {
     return 1;
 }
 
-/* Set replication to the specified master address and port. */
+/* 将当期实例作为特定master的副本 */
 void replicationSetMaster(char *ip, int port) {
     int was_master = server.masterhost == NULL;
 
@@ -2583,6 +2588,8 @@ void replicationHandleMasterDisconnection(void) {
      * the slaves only if we'll have to do a full resync with our master. */
 }
 
+/* replicaof和slaveof命令的具体实现 
+ * SLAVEOF host port 可以把当前redis实例变成某个实例的从服务器 */
 void replicaofCommand(client *c) {
     /* SLAVEOF is not allowed in cluster mode as replication is automatically
      * configured using the current address of the master node. */

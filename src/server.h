@@ -283,11 +283,12 @@ typedef long long ustime_t; /* microsecond time type. */
                                     three: normal, slave, pubsub. */
 
 /* Slave replication state. Used in server.repl_state for slaves to remember
- * what to do next. */
+ * what to do next. 
+ * slave连接到master的过程状态码 */
 #define REPL_STATE_NONE 0 /* No active replication */
-#define REPL_STATE_CONNECT 1 /* Must connect to master */
-#define REPL_STATE_CONNECTING 2 /* Connecting to master */
-/* --- Handshake states, must be ordered --- */
+#define REPL_STATE_CONNECT 1 /* 必须要连接到master */
+#define REPL_STATE_CONNECTING 2 /* 这种连接master */
+/* --- redis master 和 slave握手的过程，比如按顺序来 --- */
 #define REPL_STATE_RECEIVE_PONG 3 /* Wait for PING reply */
 #define REPL_STATE_SEND_AUTH 4 /* Send AUTH to master */
 #define REPL_STATE_RECEIVE_AUTH 5 /* Wait for AUTH reply */
@@ -299,8 +300,8 @@ typedef long long ustime_t; /* microsecond time type. */
 #define REPL_STATE_RECEIVE_CAPA 11 /* Wait for REPLCONF reply */
 #define REPL_STATE_SEND_PSYNC 12 /* Send PSYNC */
 #define REPL_STATE_RECEIVE_PSYNC 13 /* Wait for PSYNC reply */
-/* --- End of handshake states --- */
-#define REPL_STATE_TRANSFER 14 /* Receiving .rdb from master */
+/* --- 结束握手 --- */
+#define REPL_STATE_TRANSFER 14 /* 从master接收全量的rdb */
 #define REPL_STATE_CONNECTED 15 /* Connected to master */
 
 /* State of slaves from the POV of the master. Used in client->replstate.
@@ -1303,7 +1304,7 @@ struct redisServer {
     int repl_diskless_sync_delay;   /* Delay to start a diskless repl BGSAVE. */
     /* Replication (slave) */
     char *masteruser;               /* AUTH with this user and masterauth with master */
-    char *masterauth;               /* AUTH with this password with master */
+    char *masterauth;               /* 和master交互的权限验证密码 */
     char *masterhost;               /* Hostname of master */
     int masterport;                 /* Port of master */
     int repl_timeout;               /* Timeout after N seconds of master idle */
