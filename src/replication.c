@@ -2481,7 +2481,7 @@ int cancelReplicationHandshake(void) {
     return 1;
 }
 
-/* 将当期实例作为特定master的副本 */
+/* 将当前实例作为特定master的副本 */
 void replicationSetMaster(char *ip, int port) {
     int was_master = server.masterhost == NULL;
 
@@ -3225,7 +3225,7 @@ void replicationCron(void) {
         }
     }
 
-    /* Disconnect timedout slaves. */
+    /* 释放超时的slave链接. */
     if (listLength(server.slaves)) {
         listIter li;
         listNode *ln;
