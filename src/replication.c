@@ -2507,6 +2507,9 @@ void replicationSetMaster(char *ip, int port) {
     server.masterhost = sdsnew(ip);
     server.masterport = port;
 
+    /* Update oom_score_adj */
+    setOOMScoreAdj(-1);
+
     /* Force our slaves to resync with us as well. They may hopefully be able
      * to partially resync with us, but we can notify the replid change. */
     disconnectSlaves();
@@ -2573,6 +2576,9 @@ void replicationUnsetMaster(void) {
      * with PSYNC version 2, there is no need for full resync after a
      * master switch. */
     server.slaveseldb = -1;
+
+    /* Update oom_score_adj */
+    setOOMScoreAdj(-1);
 
     /* Once we turn from slave to master, we consider the starting time without
      * slaves (that is used to count the replication backlog time to live) as
@@ -3074,7 +3080,7 @@ void waitCommand(client *c) {
     c->bpop.timeout = timeout;
     c->bpop.reploffset = offset;
     c->bpop.numreplicas = numreplicas;
-    listAddNodeTail(server.clients_waiting_acks,c);
+    listAddNodeHead(server.clients_waiting_acks,c);
     blockClient(c,BLOCKED_WAIT);
 
     /* Make sure that the server will send an ACK request to all the slaves
@@ -3109,8 +3115,8 @@ void processClientsWaitingReplicas(void) {
          * offset and number of replicas, we remember it so the next client
          * may be unblocked without calling replicationCountAcksByOffset()
          * if the requested offset / replicas were equal or less. */
-        if (last_offset && last_offset > c->bpop.reploffset &&
-                           last_numreplicas > c->bpop.numreplicas)
+        if (last_offset && last_offset >= c->bpop.reploffset &&
+                           last_numreplicas >= c->bpop.numreplicas)
         {
             unblockClient(c);
             addReplyLongLong(c,last_numreplicas);
