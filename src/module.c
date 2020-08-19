@@ -1753,6 +1753,8 @@ int modulePopulateClientInfoStructure(void *ci, client *client, int structver) {
         ci1->flags |= REDISMODULE_CLIENTINFO_FLAG_TRACKING;
     if (client->flags & CLIENT_BLOCKED)
         ci1->flags |= REDISMODULE_CLIENTINFO_FLAG_BLOCKED;
+    if (connGetType(client->conn) == CONN_TYPE_TLS)
+        ci1->flags |= REDISMODULE_CLIENTINFO_FLAG_SSL;
 
     int port;
     connPeerToString(client->conn,ci1->addr,sizeof(ci1->addr),&port);
@@ -2157,7 +2159,8 @@ int RM_UnlinkKey(RedisModuleKey *key) {
  * REDISMODULE_NO_EXPIRE is returned. */
 mstime_t RM_GetExpire(RedisModuleKey *key) {
     mstime_t expire = getExpire(key->db,key->key);
-    if (expire == -1 || key->value == NULL) return -1;
+    if (expire == -1 || key->value == NULL) 
+        return REDISMODULE_NO_EXPIRE;
     expire -= mstime();
     return expire >= 0 ? expire : 0;
 }
