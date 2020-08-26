@@ -47,11 +47,11 @@ typedef struct listIter {
 typedef struct list {
     listNode *head;
     listNode *tail;
-    void *(*dup)(void *ptr);
-    void (*free)(void *ptr);
-    int (*match)(void *ptr, void *key);
-    unsigned long len;
-} list;
+    void *(*dup)(void *ptr);  // 用来复制节点的函数，主要用于深拷贝 
+    void (*free)(void *ptr);  // 释放节点的函数
+    int (*match)(void *ptr, void *key); // 校验给定的key是否和节点中的node匹配，用于查找
+    unsigned long len; //长度
+} list; // list就是一个双向链表 
 
 /* Functions implemented as macros */
 #define listLength(l) ((l)->len)

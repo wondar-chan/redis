@@ -52,7 +52,7 @@ list *listCreate(void)
     return list;
 }
 
-/* Remove all the elements from the list without destroying the list itself. */
+/* 清空list，但不销毁list */
 void listEmpty(list *list)
 {
     unsigned long len;
@@ -70,21 +70,14 @@ void listEmpty(list *list)
     list->len = 0;
 }
 
-/* Free the whole list.
- *
- * This function can't fail. */
+/* 清空并销毁list */
 void listRelease(list *list)
 {
     listEmpty(list);
     zfree(list);
 }
 
-/* Add a new node to the list, to head, containing the specified 'value'
- * pointer as value.
- *
- * On error, NULL is returned and no operation is performed (i.e. the
- * list remains unaltered).
- * On success the 'list' pointer you pass to the function is returned. */
+/* 在list头部增加一个新节点，就是一次双向链表的头部插入，插入成功返回新的head*/
 list *listAddNodeHead(list *list, void *value)
 {
     listNode *node;
@@ -105,12 +98,7 @@ list *listAddNodeHead(list *list, void *value)
     return list;
 }
 
-/* Add a new node to the list, to tail, containing the specified 'value'
- * pointer as value.
- *
- * On error, NULL is returned and no operation is performed (i.e. the
- * list remains unaltered).
- * On success the 'list' pointer you pass to the function is returned. */
+/* 双向链表尾部插入 */
 list *listAddNodeTail(list *list, void *value)
 {
     listNode *node;
@@ -181,8 +169,9 @@ void listDelNode(list *list, listNode *node)
 
 /* Returns a list iterator 'iter'. After the initialization every
  * call to listNext() will return the next element of the list.
- *
- * This function can't fail. */
+ * 
+ * This function can't fail. 
+ * list的迭代器，就是有个指针 */
 listIter *listGetIterator(list *list, int direction)
 {
     listIter *iter;
@@ -239,14 +228,13 @@ listNode *listNext(listIter *iter)
     return current;
 }
 
-/* Duplicate the whole list. On out of memory NULL is returned.
- * On success a copy of the original list is returned.
+/* 复制整个list，如果内存不足返回null，否则返回复制出来的新list
+ * 
+ * 如果设置了List的dup方法，新list里的ListNode里的val才是新复制处理来的，
+ * 否则就直接是旧ListNode里val的一个指针，这样的问题是如果新旧list其中一
+ * 个有变动，都会影响到另外一个list。
  *
- * The 'Dup' method set with listSetDupMethod() function is used
- * to copy the node value. Otherwise the same pointer value of
- * the original node is used as value of the copied node.
- *
- * The original list both on success or error is never modified. */
+ * 不管成功与否，原始链表都不会被改动 */
 list *listDup(list *orig)
 {
     list *copy;
@@ -278,15 +266,10 @@ list *listDup(list *orig)
     return copy;
 }
 
-/* Search the list for a node matching a given key.
- * The match is performed using the 'match' method
- * set with listSetMatchMethod(). If no 'match' method
- * is set, the 'value' pointer of every node is directly
- * compared with the 'key' pointer.
+/*  在list中查找指定的key，如果list指定了match方法，则使用match方法来判定
+ * 是否匹配，否则直接比较节点中的val和key指向的是否是同一个地址。 
  *
- * On success the first matching node pointer is returned
- * (search starts from head). If no matching node exists
- * NULL is returned. */
+ * 如果找到匹配的，返回第一个匹配的节点，否则返回null，本质上就是一个双向链表的查找 */
 listNode *listSearchKey(list *list, void *key)
 {
     listIter iter;
@@ -307,15 +290,11 @@ listNode *listSearchKey(list *list, void *key)
     return NULL;
 }
 
-/* Return the element at the specified zero-based index
- * where 0 is the head, 1 is the element next to head
- * and so on. Negative integers are used in order to count
- * from the tail, -1 is the last element, -2 the penultimate
- * and so on. If the index is out of range NULL is returned. */
+/* 查找list中在第index位的节点 */
 listNode *listIndex(list *list, long index) {
     listNode *n;
 
-    if (index < 0) {
+    if (index < 0) {// 如果index是负，执行逆向查找 
         index = (-index)-1;
         n = list->tail;
         while(index-- && n) n = n->prev;
@@ -326,7 +305,7 @@ listNode *listIndex(list *list, long index) {
     return n;
 }
 
-/* Rotate the list removing the tail node and inserting it to the head. */
+/* 把list的tail节点放到头部 */
 void listRotateTailToHead(list *list) {
     if (listLength(list) <= 1) return;
 
@@ -341,7 +320,7 @@ void listRotateTailToHead(list *list) {
     list->head = tail;
 }
 
-/* Rotate the list removing the head node and inserting it to the tail. */
+/* 把list中的头部节点放到尾部. */
 void listRotateHeadToTail(list *list) {
     if (listLength(list) <= 1) return;
 
@@ -357,7 +336,8 @@ void listRotateHeadToTail(list *list) {
 }
 
 /* Add all the elements of the list 'o' at the end of the
- * list 'l'. The list 'other' remains empty but otherwise valid. */
+ * list 'l'. The list 'other' remains empty but otherwise valid. 
+ * 把l和o两个list拼接在一起，*/
 void listJoin(list *l, list *o) {
     if (o->head)
         o->head->prev = l->tail;
