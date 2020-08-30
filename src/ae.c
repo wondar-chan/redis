@@ -45,8 +45,11 @@
 #include "zmalloc.h"
 #include "config.h"
 
-/* Include the best multiplexing layer supported by this system.
- * The following should be ordered by performances, descending. */
+/* ae.c里封装了不同操作系统的IO多路复用机制，通过条件编译的方式编译不同的多路复用库
+ * redis优先会考虑使用evport,然后才是epoll，再是kqueue，最后才是select，从前到后
+ * 性能逐渐变差，当然有些IO复用是在特殊平台才独有的，比如kqueue用于freebsd系统，目前
+ * mac系统上用的就是kqueue。*/
+
 #ifdef HAVE_EVPORT
 #include "ae_evport.c"
 #else
@@ -152,7 +155,8 @@ void aeDeleteEventLoop(aeEventLoop *eventLoop) {
 void aeStop(aeEventLoop *eventLoop) {
     eventLoop->stop = 1;
 }
-
+/* fd事件监听的统一注册入口，最开始监听了redis端口的fd，有新的连接进来是其fd也会被加进来
+ * 另外这里还有aof和rdb的异步时间，后端依赖于不同的aeApiAddEvent实现 */
 int aeCreateFileEvent(aeEventLoop *eventLoop, int fd, int mask,
         aeFileProc *proc, void *clientData)
 {
@@ -263,7 +267,9 @@ static long msUntilEarliestTimer(aeEventLoop *eventLoop) {
             ? 0 : (long)((earliest->when - now) / 1000);
 }
 
-/* Process time events */
+/* 执行时间事件，时间事件直接存放在了aeEventLoop->timeEventHead双链表中，执行的过程
+ * 就是遍历链表，只执行到了或这超过预定时间的是时间事件.
+ * 函数返回值是执行了多少时间事件*/
 static int processTimeEvents(aeEventLoop *eventLoop) {
     int processed = 0;
     aeTimeEvent *te;
@@ -353,7 +359,7 @@ int aeProcessEvents(aeEventLoop *eventLoop, int flags)
 {
     int processed = 0, numevents;
 
-    /* Nothing to do? return ASAP */
+    /* 如果flag位既不是时间事件，又不是文件事件，返回0 */
     if (!(flags & AE_TIME_EVENTS) && !(flags & AE_FILE_EVENTS)) return 0;
 
     /* Note that we want call select() even if there are no
@@ -395,7 +401,8 @@ int aeProcessEvents(aeEventLoop *eventLoop, int flags)
             eventLoop->beforesleep(eventLoop);
 
         /* Call the multiplexing API, will return only on timeout or when
-         * some event fires. */
+         * some event fires. 
+         * 通过aeApiPoll获取当前就绪的事件数量*/
         numevents = aeApiPoll(eventLoop, tvp);
 
         /* After sleep callback. */
@@ -433,7 +440,7 @@ int aeProcessEvents(aeEventLoop *eventLoop, int flags)
                 fe = &eventLoop->events[fd]; /* Refresh in case of resize. */
             }
 
-            /* Fire the writable event. */
+            /* 处理可写入事件  */
             if (fe->mask & mask & AE_WRITABLE) {
                 if (!fired || fe->wfileProc != fe->rfileProc) {
                     fe->wfileProc(eventLoop,fd,fe->clientData,mask);
@@ -456,7 +463,7 @@ int aeProcessEvents(aeEventLoop *eventLoop, int flags)
             processed++;
         }
     }
-    /* Check time events */
+    /* 最后处理时间事件 */
     if (flags & AE_TIME_EVENTS)
         processed += processTimeEvents(eventLoop);
 

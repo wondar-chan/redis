@@ -47,7 +47,7 @@
                            things to disk before sending replies, and want
                            to do that in a group fashion. */
 
-#define AE_FILE_EVENTS (1<<0)
+#define AE_FILE_EVENTS (1<<0)  // redis将事件分为时间事件和文件事件，通过flag位来标识
 #define AE_TIME_EVENTS (1<<1)
 #define AE_ALL_EVENTS (AE_FILE_EVENTS|AE_TIME_EVENTS)
 #define AE_DONT_WAIT (1<<2)
