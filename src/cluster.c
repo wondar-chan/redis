@@ -480,7 +480,7 @@ void clusterInit(void) {
     if (clusterLockConfig(server.cluster_configfile) == C_ERR)
         exit(1);
 
-    /* Load or create a new nodes configuration. */
+    /* 加载或者创建一个新的配置. */
     if (clusterLoadConfig(server.cluster_configfile) == C_ERR) {
         /* No configuration found. We will just use the random name provided
          * by the createClusterNode() function. */
@@ -498,7 +498,8 @@ void clusterInit(void) {
 
     /* Port sanity check II
      * The other handshake port check is triggered too late to stop
-     * us from trying to use a too-high cluster port number. */
+     * us from trying to use a too-high cluster port number.
+     * 监听集群信息相互传递的端口 */
     int port = server.tls_cluster ? server.tls_port : server.port;
     if (port > (65535-CLUSTER_PORT_INCR)) {
         serverLog(LL_WARNING, "Redis port number too high. "
@@ -508,13 +509,14 @@ void clusterInit(void) {
                    "lower than 55535.");
         exit(1);
     }
+    /* 集群信息同步的端口是redis数据端口号+1000 */
     if (listenToPort(port+CLUSTER_PORT_INCR,
         server.cfd,&server.cfd_count) == C_ERR)
     {
         exit(1);
     } else {
         int j;
-
+        // 将端口对应的fd放到eventloop里 
         for (j = 0; j < server.cfd_count; j++) {
             if (aeCreateFileEvent(server.el, server.cfd[j], AE_READABLE,
                 clusterAcceptHandler, NULL) == AE_ERR)
@@ -523,7 +525,7 @@ void clusterInit(void) {
         }
     }
 
-    /* The slots -> keys map is a radix tree. Initialize it here. */
+    /*slot到key的映射是一颗radix树，在这里初始化 */
     server.cluster->slots_to_keys = raxNew();
     memset(server.cluster->slots_keys_count,0,
            sizeof(server.cluster->slots_keys_count));
@@ -542,15 +544,14 @@ void clusterInit(void) {
     clusterUpdateMyselfFlags();
 }
 
-/* Reset a node performing a soft or hard reset:
- *
- * 1) All other nodes are forget.
- * 2) All the assigned / open slots are released.
- * 3) If the node is a slave, it turns into a master.
- * 5) Only for hard reset: a new Node ID is generated.
- * 6) Only for hard reset: currentEpoch and configEpoch are set to 0.
- * 7) The new configuration is saved and the cluster state updated.
- * 8) If the node was a slave, the whole data set is flushed away. */
+/* 重置节点分为软重置和硬重置，主要逻辑如下：
+ * 1. 所有其他节点被遗忘  
+ * 2. 所有已分配或启用的槽位被释放  
+ * 3. 如果节点是slave节点，则转变为master节点  
+ * 5. 生成新的节点id (仅硬重置)
+ * 6. currentEpoch和configEpoch被重设为0(仅硬重置)
+ * 7. 新配置文件被保存，集群状态信息被更新 
+ * 8. 如果当前节点是slave节点，所有数据会被清除  */
 void clusterReset(int hard) {
     dictIterator *di;
     dictEntry *de;
@@ -668,7 +669,8 @@ void clusterAcceptHandler(aeEventLoop *el, int fd, void *privdata, int mask) {
     UNUSED(privdata);
 
     /* If the server is starting up, don't accept cluster connections:
-     * UPDATE messages may interact with the database content. */
+     * UPDATE messages may interact with the database content.
+     * 如果服务正在启动中，不接收集群的连接 */
     if (server.masterhost == NULL && server.loading) return;
 
     while(max--) {
@@ -3854,7 +3856,8 @@ int clusterDelNodeSlots(clusterNode *node) {
 }
 
 /* Clear the migrating / importing state for all the slots.
- * This is useful at initialization and when turning a master into slave. */
+ * This is useful at initialization and when turning a master into slave. 
+ * 清除从所有槽位导入或者迁移的状态，在master角色转化为slave时尤其有用*/
 void clusterCloseAllSlots(void) {
     memset(server.cluster->migrating_slots_to,0,
         sizeof(server.cluster->migrating_slots_to));

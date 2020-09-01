@@ -191,7 +191,9 @@ int dictExpand(dict *d, unsigned long size)
  * since part of the hash table may be composed of empty spaces, it is not
  * guaranteed that this function will rehash even a single bucket, since it
  * will visit at max N*10 empty buckets in total, otherwise the amount of
- * work it does would be unbound and the function may block for a long time. */
+ * work it does would be unbound and the function may block for a long time. 
+ * redis渐进式hash，采用分批的方式，将ht[0]依下标转移到ht[2],避免了hashtable扩容时大量
+ * 数据迁移导致的性能问题*/
 int dictRehash(dict *d, int n) {
     int empty_visits = n*10; /* Max number of empty buckets to visit. */
     if (!dictIsRehashing(d)) return 0;
@@ -245,7 +247,7 @@ long long timeInMilliseconds(void) {
     return (((long long)tv.tv_sec)*1000)+(tv.tv_usec/1000);
 }
 
-/* Rehash for an amount of time between ms milliseconds and ms+1 milliseconds */
+/* 在空闲之余分部分cpu时间执行渐进式hash */
 int dictRehashMilliseconds(dict *d, int ms) {
     if (d->iterators > 0) return 0;
 
@@ -971,7 +973,8 @@ static int _dictExpandIfNeeded(dict *d)
     /* If we reached the 1:1 ratio, and we are allowed to resize the hash
      * table (global setting) or we should avoid it but the ratio between
      * elements/buckets is over the "safe" threshold, we resize doubling
-     * the number of buckets. */
+     * the number of buckets. 
+     * 当配置了可扩容时，容量负载达到100%就扩容。配置不可扩容时，负载达到5也会强制扩容*/
     if (d->ht[0].used >= d->ht[0].size &&
         (dict_can_resize ||
          d->ht[0].used/d->ht[0].size > dict_force_resize_ratio))

@@ -137,13 +137,12 @@ static int dictExpand(dict *ht, unsigned long size) {
     return DICT_OK;
 }
 
-/* Add an element to the target hash table */
+/* 在hash表中添加一个新的元素 */
 static int dictAdd(dict *ht, void *key, void *val) {
     int index;
     dictEntry *entry;
 
-    /* Get the index of the new element, or -1 if
-     * the element already exists. */
+    /* 返回key在hash表中的下标，如果已经存在了就返回-1*/
     if ((index = _dictKeyIndex(ht, key)) == -1)
         return DICT_ERR;
 
@@ -305,13 +304,13 @@ static void dictReleaseIterator(dictIterator *iter) {
 
 /* ------------------------- private functions ------------------------------ */
 
-/* Expand the hash table if needed */
+/* 如有必要，扩大hashtable的大小  */
 static int _dictExpandIfNeeded(dict *ht) {
     /* If the hash table is empty expand it to the initial size,
      * if the table is "full" double its size. */
     if (ht->size == 0)
         return dictExpand(ht, DICT_HT_INITIAL_SIZE);
-    if (ht->used == ht->size)
+    if (ht->used == ht->size)  // 如果redis的负载因子到1，把ht空间扩大一倍 
         return dictExpand(ht, ht->size*2);
     return DICT_OK;
 }
@@ -340,7 +339,7 @@ static int _dictKeyIndex(dict *ht, const void *key) {
         return -1;
     /* Compute the key hash value */
     h = dictHashKey(ht, key) & ht->sizemask;
-    /* Search if this slot does not already contain the given key */
+    /* 遍历单链表，查找是否已经包含该key了  */
     he = ht->table[h];
     while(he) {
         if (dictCompareHashKeys(ht, key, he->key))
