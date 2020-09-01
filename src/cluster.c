@@ -548,10 +548,10 @@ void clusterInit(void) {
  * 1. 所有其他节点被遗忘  
  * 2. 所有已分配或启用的槽位被释放  
  * 3. 如果节点是slave节点，则转变为master节点  
- * 5. 生成新的节点id (仅硬重置)
- * 6. currentEpoch和configEpoch被重设为0(仅硬重置)
- * 7. 新配置文件被保存，集群状态信息被更新 
- * 8. 如果当前节点是slave节点，所有数据会被清除  */
+ * 4. 生成新的节点id (仅硬重置)
+ * 5. currentEpoch和configEpoch被重设为0(仅硬重置)
+ * 6. 新配置文件被保存，集群状态信息被更新 
+ * 7. 如果当前节点是slave节点，所有数据会被清除  */
 void clusterReset(int hard) {
     dictIterator *di;
     dictEntry *de;
@@ -764,7 +764,8 @@ unsigned int keyHashSlot(char *key, int keylen) {
  * receive the first pong).
  *
  * The node is created and returned to the user, but it is not automatically
- * added to the nodes hash table. */
+ * added to the nodes hash table. 
+ * 创建一个新的集群节点 */
 clusterNode *createClusterNode(char *nodename, int flags) {
     clusterNode *node = zmalloc(sizeof(*node));
 
