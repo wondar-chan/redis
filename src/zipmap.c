@@ -92,7 +92,7 @@
  * 5 bytes for all the other lengths. */
 #define ZIPMAP_LEN_BYTES(_l) (((_l) < ZIPMAP_BIGLEN) ? 1 : sizeof(unsigned int)+1)
 
-/* Create a new empty zipmap. */
+/* 创建一个空的zipmap，zipmap就是一个字符串，然后以asci 255字符结尾. */
 unsigned char *zipmapNew(void) {
     unsigned char *zm = zmalloc(2);
 
@@ -129,10 +129,9 @@ static unsigned int zipmapEncodeLength(unsigned char *p, unsigned int len) {
     }
 }
 
-/* Search for a matching key, returning a pointer to the entry inside the
- * zipmap. Returns NULL if the key is not found.
- *
- * If NULL is returned, and totlen is not NULL, it is set to the entire
+/* 查找是否有匹配的key，如果有则返回zipmap中它对于的entry指针，否则返回null  
+ * 
+ * If NULL is returned, and totlen is not NULL, it is set to the entire  
  * size of the zimap, so that the calling function will be able to
  * reallocate the original zipmap to make room for more entries. */
 static unsigned char *zipmapLookupRaw(unsigned char *zm, unsigned char *key, unsigned int klen, unsigned int *totlen) {
@@ -205,31 +204,32 @@ static inline unsigned char *zipmapResize(unsigned char *zm, unsigned int len) {
     return zm;
 }
 
-/* Set key to value, creating the key if it does not already exist.
- * If 'update' is not NULL, *update is set to 1 if the key was
- * already preset, otherwise to 0. */
+/* 把指定key对应的值设置为val，如果key不存在，则创建key
+ * update指针标识是否是更新，如果update不为空，且set的
+ * key存在，则把*update设为1，否则设为0 */
 unsigned char *zipmapSet(unsigned char *zm, unsigned char *key, unsigned int klen, unsigned char *val, unsigned int vlen, int *update) {
     unsigned int zmlen, offset;
-    unsigned int freelen, reqlen = zipmapRequiredLength(klen,vlen);
+    unsigned int freelen, reqlen = zipmapRequiredLength(klen,vlen);  // 计算存储key-value锁需要的空间 
     unsigned int empty, vempty;
     unsigned char *p;
 
     freelen = reqlen;
     if (update) *update = 0;
-    p = zipmapLookupRaw(zm,key,klen,&zmlen);
+    p = zipmapLookupRaw(zm,key,klen,&zmlen);  // 先查找key是否已经存在 
     if (p == NULL) {
-        /* Key not found: enlarge */
+        /* key不为null，插入数据前先要扩容 */
         zm = zipmapResize(zm, zmlen+reqlen);
         p = zm+zmlen-1;
         zmlen = zmlen+reqlen;
 
-        /* Increase zipmap length (this is an insert) */
+        /* 如果zipmap的数据量在254以下，直接在0位保存entry数量 */
         if (zm[0] < ZIPMAP_BIGLEN) zm[0]++;
     } else {
-        /* Key found. Is there enough space for the new value? */
-        /* Compute the total length: */
+        /* 如果在zmap中已经有了，需要确保是否有足够的空间存储新的val */
+        /* 计算出总长度 */
         if (update) *update = 1;
         freelen = zipmapRawEntryLength(p);
+        // 如果没有足够的空间，需要先申请新的内存，然后把旧数据迁移过去
         if (freelen < reqlen) {
             /* Store the offset of this key within the current zipmap, so
              * it can be resized. Then, move the tail backwards so this
@@ -249,7 +249,8 @@ unsigned char *zipmapSet(unsigned char *zm, unsigned char *key, unsigned int kle
     /* We now have a suitable block where the key/value entry can
      * be written. If there is too much free space, move the tail
      * of the zipmap a few bytes to the front and shrink the zipmap,
-     * as we want zipmaps to be very space efficient. */
+     * as we want zipmaps to be very space efficient. 
+     * 扩容完了，有足够的空间可以存放数据了 */
     empty = freelen-reqlen;
     if (empty >= ZIPMAP_VALUE_MAX_FREE) {
         /* First, move the tail <empty> bytes to the front, then resize
@@ -277,7 +278,8 @@ unsigned char *zipmapSet(unsigned char *zm, unsigned char *key, unsigned int kle
 }
 
 /* Remove the specified key. If 'deleted' is not NULL the pointed integer is
- * set to 0 if the key was not found, to 1 if it was found and deleted. */
+ * set to 0 if the key was not found, to 1 if it was found and deleted. 
+ * 从zipmap中移除特定的key，先找到位置，然后把后面的数据往前移，达到覆盖删除的目的 */
 unsigned char *zipmapDel(unsigned char *zm, unsigned char *key, unsigned int klen, int *deleted) {
     unsigned int zmlen, freelen;
     unsigned char *p = zipmapLookupRaw(zm,key,klen,&zmlen);
