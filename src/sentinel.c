@@ -141,7 +141,8 @@ typedef struct sentinelAddr {
  * have 5 connections instead of 500, we also send 5 pings instead of 500.
  *
  * Links are shared only for Sentinels: master and slave instances have
- * a link with refcount = 1, always. */
+ * a link with refcount = 1, always. 
+ * redis哨兵模式的具体实现，详细可以参考专栏https://blog.csdn.net/xindoo/category_10068113.html */
 typedef struct instanceLink {
     int refcount;          /* Number of sentinelRedisInstance owners. */
     int disconnected;      /* Non-zero if we need to reconnect cc or pc. */
@@ -490,7 +491,7 @@ void initSentinel(void) {
             serverPanic("Unsupported command flag");
     }
 
-    /* Initialize various data structures. */
+    /* 初始化哨兵的部分数据. */
     sentinel.current_epoch = 0;
     sentinel.masters = dictCreate(&instancesDictType,NULL);
     sentinel.tilt = 0;
@@ -1622,7 +1623,7 @@ char *sentinelInstanceMapCommand(sentinelRedisInstance *ri, char *command) {
     return retval ? retval : command;
 }
 
-/* ============================ Config handling ============================= */
+/* ============================ 配置处理 ============================= */
 char *sentinelHandleConfiguration(char **argv, int argc) {
     sentinelRedisInstance *ri;
 
@@ -2041,8 +2042,10 @@ static int instanceLinkNegotiateTLS(redisAsyncContext *context) {
 
 /* Create the async connections for the instance link if the link
  * is disconnected. Note that link->disconnected is true even if just
- * one of the two links (commands and pub/sub) is missing. */
+ * one of the two links (commands and pub/sub) is missing. 
+ * 如果链接端口，创建一个异步链接。*/
 void sentinelReconnectInstance(sentinelRedisInstance *ri) {
+    // 如果未断开，直接返回 
     if (ri->link->disconnected == 0) return;
     if (ri->addr->port == 0) return; /* port == 0 means invalid address. */
     instanceLink *link = ri->link;
@@ -4537,7 +4540,8 @@ void sentinelHandleRedisInstance(sentinelRedisInstance *ri) {
 }
 
 /* Perform scheduled operations for all the instances in the dictionary.
- * Recursively call the function against dictionaries of slaves. */
+ * Recursively call the function against dictionaries of slaves.
+ * 处理哨兵检测的所有redis实例，主要是检测是主观宕机，做故障迁移 */
 void sentinelHandleDictOfRedisInstances(dict *instances) {
     dictIterator *di;
     dictEntry *de;
@@ -4590,6 +4594,7 @@ void sentinelCheckTiltCondition(void) {
     sentinel.previous_time = mstime();
 }
 
+/*哨兵模式下运行的定时任务*/
 void sentinelTimer(void) {
     // 检查是否需要进入TITL模式
     sentinelCheckTiltCondition();

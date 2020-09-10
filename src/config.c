@@ -557,7 +557,7 @@ void loadServerConfigFromString(char *config) {
             }
         } else if (!strcasecmp(argv[0],"loadmodule") && argc >= 2) {
             queueLoadModule(argv[1],&argv[2],argc-2);
-        } else if (!strcasecmp(argv[0],"sentinel")) {
+        } else if (!strcasecmp(argv[0],"sentinel")) { //加载哨兵模式的配置
             /* argc == 1 is handled by main() as we need to enter the sentinel
              * mode ASAP. */
             if (argc != 1) {

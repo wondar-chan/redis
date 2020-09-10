@@ -354,8 +354,8 @@ extern int configOOMScoreAdjValuesDefaults[CONFIG_OOM_COUNT];
 /* Anti-warning macro... */
 #define UNUSED(V) ((void) V)
 
-#define ZSKIPLIST_MAXLEVEL 32 /* Should be enough for 2^64 elements */
-#define ZSKIPLIST_P 0.25      /* Skiplist P = 1/4 */
+#define ZSKIPLIST_MAXLEVEL 32 /* 足够存储 2^64 个元素了，因为按概率，每4个才会加一层 */
+#define ZSKIPLIST_P 0.25      /* 跳表层数增加的概率 P = 1/4 */
 
 /* Append only defines */
 #define AOF_FSYNC_NO 0

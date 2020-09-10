@@ -61,6 +61,7 @@
 
 /*-----------------------------------------------------------------------------
  * Skiplist implementation of the low level API
+ * set使用跳表实现，具体可以参考博客 http://zhangtielei.com/posts/blog-redis-skiplist.html 
  *----------------------------------------------------------------------------*/
 
 int zslLexValueGteMin(sds value, zlexrangespec *spec);
@@ -102,7 +103,7 @@ void zslFreeNode(zskiplistNode *node) {
     zfree(node);
 }
 
-/* Free a whole skiplist. */
+/* 释放整个跳表 */
 void zslFree(zskiplist *zsl) {
     zskiplistNode *node = zsl->header->level[0].forward, *next;
 
@@ -118,7 +119,8 @@ void zslFree(zskiplist *zsl) {
 /* Returns a random level for the new skiplist node we are going to create.
  * The return value of this function is between 1 and ZSKIPLIST_MAXLEVEL
  * (both inclusive), with a powerlaw-alike distribution where higher
- * levels are less likely to be returned. */
+ * levels are less likely to be returned. 
+ * 随机生成跳表的层高，最高32层，实现原理就是按概率随机加1，加到不能加，每次有四分之一的可能性+1 */
 int zslRandomLevel(void) {
     int level = 1;
     while ((random()&0xFFFF) < (ZSKIPLIST_P * 0xFFFF))
@@ -128,7 +130,8 @@ int zslRandomLevel(void) {
 
 /* Insert a new node in the skiplist. Assumes the element does not already
  * exist (up to the caller to enforce that). The skiplist takes ownership
- * of the passed SDS string 'ele'. */
+ * of the passed SDS string 'ele'. 
+ * 在跳表中插入一个新的节点, */
 zskiplistNode *zslInsert(zskiplist *zsl, double score, sds ele) {
     zskiplistNode *update[ZSKIPLIST_MAXLEVEL], *x;
     unsigned int rank[ZSKIPLIST_MAXLEVEL];
