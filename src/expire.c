@@ -103,7 +103,7 @@ int activeExpireCycleTryExpire(redisDb *db, dictEntry *de, long long now) {
  * conditions:
  *
  * If type is ACTIVE_EXPIRE_CYCLE_FAST the function will try to run a
- * "fast" expire cycle that takes no longer than EXPIRE_FAST_CYCLE_DURATION
+ * "fast" expire cycle that takes no longer than ACTIVE_EXPIRE_CYCLE_FAST_DURATION
  * microseconds, and is not repeated again before the same amount of time.
  * The cycle will also refuse to run at all if the latest slow cycle did not
  * terminate because of a time limit condition.
@@ -422,7 +422,7 @@ void expireSlaveKeys(void) {
         else
             dictDelete(slaveKeysWithExpire,keyname);
 
-        /* Stop conditions: found 3 keys we cna't expire in a row or
+        /* Stop conditions: found 3 keys we can't expire in a row or
          * time limit was reached. */
         cycles++;
         if (noexpire > 3) break;
@@ -474,7 +474,7 @@ size_t getSlaveKeyWithExpireCount(void) {
  *
  * Note: technically we should handle the case of a single DB being flushed
  * but it is not worth it since anyway race conditions using the same set
- * of key names in a wriatable slave and in its master will lead to
+ * of key names in a writable slave and in its master will lead to
  * inconsistencies. This is just a best-effort thing we do. */
 void flushSlaveKeysWithExpireList(void) {
     if (slaveKeysWithExpire) {

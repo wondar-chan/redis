@@ -130,9 +130,9 @@ static unsigned int zipmapEncodeLength(unsigned char *p, unsigned int len) {
 }
 
 /* 查找是否有匹配的key，如果有则返回zipmap中它对于的entry指针，否则返回null  
- * 
- * If NULL is returned, and totlen is not NULL, it is set to the entire  
- * size of the zimap, so that the calling function will be able to
+ *
+ * If NULL is returned, and totlen is not NULL, it is set to the entire
+ * size of the zipmap, so that the calling function will be able to
  * reallocate the original zipmap to make room for more entries. */
 static unsigned char *zipmapLookupRaw(unsigned char *zm, unsigned char *key, unsigned int klen, unsigned int *totlen) {
     unsigned char *p = zm+1, *k = NULL;
