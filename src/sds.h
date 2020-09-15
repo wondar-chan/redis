@@ -42,7 +42,10 @@ extern const char *SDS_NOINIT;
 
 typedef char *sds;
 
-/* 注意:sdshdr5从未被使用过，我们只是直接访问flag。但是，这里记录下sdshdr5的结构。 */
+/* 针对不同的字符串设置了不同的结构体，主要差别在于len和alloc的数据类型，不同长度使用
+ * 不同的数据类型，以达到节省内存的目的。  
+ *  
+ * 注意:sdshdr5从未被使用过，我们只是直接访问flag。但是，这里记录下sdshdr5的结构。 */
 struct __attribute__ ((__packed__)) sdshdr5 {
     unsigned char flags; /* 3 lsb of type, and 5 msb of string length */
     char buf[];
@@ -80,6 +83,7 @@ struct __attribute__ ((__packed__)) sdshdr64 {
 #define SDS_TYPE_MASK 7
 #define SDS_TYPE_BITS 3
 #define SDS_HDR_VAR(T,s) struct sdshdr##T *sh = (void*)((s)-(sizeof(struct sdshdr##T)));
+// 这个宏定义直接推算出sdshdr头部的内存地址
 #define SDS_HDR(T,s) ((struct sdshdr##T *)((s)-(sizeof(struct sdshdr##T))))
 #define SDS_TYPE_5_LEN(f) ((f)>>SDS_TYPE_BITS)
 

@@ -39,6 +39,19 @@
 #include "sds.h"
 #include "sdsalloc.h"
 
+/* redis sds（动态字符）的实现，类似于java中的StringBuffer StringBuilder，但为了节省存储空间，
+ * 做了更极致的设计。 redis针对不同的字符串长度设计了多种不同的结构体，比如sdshdr8 sdshdr16 
+ * ……sdshdr32，其差异在于sdshdr中len和alloc字段的数据类型。  
+ * 以 sdshdr8为例，其存储结构如下。  
+ * |  len  | alloc | flag |   buff   |
+ * | 1byte | 1byte | 1byte|  n bytes | 
+ * 相比于直接用int表示len和alloc，某个字符串节省了6个字节，其设计策略是用最少的字节存储字符串的长
+ * 度信息和剩余空间，这对于redis中大量短字符串的情况而言省下的内存是非常可观的。  
+ * 
+ * 另外，sds为了兼容c的字符串，redis中所有sds指针都是指向buf的，而并不是sdshdr的开头，这点要
+ * 额外注意。 
+ */ 
+
 const char *SDS_NOINIT = "SDS_NOINIT";
 
 static inline int sdsHdrSize(char type) {
@@ -771,7 +784,7 @@ void sdstoupper(sds s) {
     for (j = 0; j < len; j++) s[j] = toupper(s[j]);
 }
 
-/* Compare two sds strings s1 and s2 with memcmp().
+/* 字符串大小的比较，因为sds兼容了c的字符串，所以可以直接用c的函数memcmp() 
  *
  * Return value:
  *
