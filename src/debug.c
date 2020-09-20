@@ -1565,12 +1565,33 @@ int memtest_test_linux_anonymous_maps(void) {
 }
 #endif
 
+static void killMainThread(void) {
+    int err;
+    if (pthread_self() != server.main_thread_id && pthread_cancel(server.main_thread_id) == 0) {
+        if ((err = pthread_join(server.main_thread_id,NULL)) != 0) {
+            serverLog(LL_WARNING, "main thread can not be joined: %s", strerror(err));
+        } else {
+            serverLog(LL_WARNING, "main thread terminated");
+        }
+    }
+}
+
+/* Kill the running threads (other than current) in an unclean way. This function
+ * should be used only when it's critical to stop the threads for some reason.
+ * Currently Redis does this only on crash (for instance on SIGSEGV) in order
+ * to perform a fast memory check without other threads messing with memory. */
+static void killThreads(void) {
+    killMainThread();
+    bioKillThreads();
+    killIOThreads();
+}
+
 void doFastMemoryTest(void) {
 #if defined(HAVE_PROC_MAPS)
     if (server.memcheck_enabled) {
         /* Test memory */
         serverLogRaw(LL_WARNING|LL_RAW, "\n------ FAST MEMORY TEST ------\n");
-        bioKillThreads();
+        killThreads();
         if (memtest_test_linux_anonymous_maps()) {
             serverLogRaw(LL_WARNING|LL_RAW,
                 "!!! MEMORY ERROR DETECTED! Check your memory ASAP !!!\n");
@@ -1626,13 +1647,14 @@ void dumpCodeAroundEIP(void *eip) {
             /* Find the address of the next page, which is our "safety"
              * limit when dumping. Then try to dump just 128 bytes more
              * than EIP if there is room, or stop sooner. */
+            void *base = (void *)info.dli_saddr;
             unsigned long next = ((unsigned long)eip + sz) & ~(sz-1);
             unsigned long end = (unsigned long)eip + 128;
             if (end > next) end = next;
-            len = end - (unsigned long)info.dli_saddr;
+            len = end - (unsigned long)base;
             serverLogHexDump(LL_WARNING, "dump of function",
-                info.dli_saddr ,len);
-            dumpX86Calls(info.dli_saddr,len);
+                base, len);
+            dumpX86Calls(base, len);
         }
     }
 }
