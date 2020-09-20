@@ -2902,6 +2902,7 @@ void initServer(void) {
     server.aof_state = server.aof_enabled ? AOF_ON : AOF_OFF;
     server.hz = server.config_hz;
     server.pid = getpid();
+    server.in_fork_child = CHILD_TYPE_NONE;
     server.main_thread_id = pthread_self();
     server.current_client = NULL;
     server.fixed_time_expire = 0;
@@ -5019,7 +5020,8 @@ void removeSignalHandlers(void) {
  * accepting writes because of a write error condition. */
 static void sigKillChildHandler(int sig) {
     UNUSED(sig);
-    serverLogFromHandler(LL_WARNING, "Received SIGUSR1 in child, exiting now.");
+    int level = server.in_fork_child == CHILD_TYPE_MODULE? LL_VERBOSE: LL_WARNING;
+    serverLogFromHandler(level, "Received SIGUSR1 in child, exiting now.");
     exitFromChild(SERVER_CHILD_NOERROR_RETVAL);
 }
 
@@ -5045,11 +5047,13 @@ void closeClildUnusedResourceAfterFork() {
         close(server.cluster_config_file_lock_fd);  /* don't care if this fails */
 }
 
-int redisFork() {
+/* purpose is one of CHILD_TYPE_ types */
+int redisFork(int purpose) {
     int childpid;
     long long start = ustime();
     if ((childpid = fork()) == 0) {
         /* 子进程 */
+        server.in_fork_child = purpose;
         setOOMScoreAdj(CONFIG_OOM_BGCHILD);
         setupChildSignalHandlers();
         closeClildUnusedResourceAfterFork();

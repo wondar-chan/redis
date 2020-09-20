@@ -1049,9 +1049,11 @@ struct clusterState;
 #endif
 
 #define CHILD_INFO_MAGIC 0xC17DDA7A12345678LL
-#define CHILD_INFO_TYPE_RDB 0
-#define CHILD_INFO_TYPE_AOF 1
-#define CHILD_INFO_TYPE_MODULE 3
+#define CHILD_TYPE_NONE 0
+#define CHILD_TYPE_RDB 1
+#define CHILD_TYPE_AOF 2
+#define CHILD_TYPE_LDB 3
+#define CHILD_TYPE_MODULE 4
 
 struct redisServer {
     /* General */
@@ -1065,6 +1067,7 @@ struct redisServer {
                                    the actual 'hz' field value if dynamic-hz
                                    is enabled. */
     int hz;                     /* serverCron() calls frequency in hertz */
+    int in_fork_child;          /* indication that this is a fork child */
     redisDb *db;
     dict *commands;             /* Command table */
     dict *orig_commands;        /* Command table before command renaming. */
@@ -1910,7 +1913,7 @@ void sendChildInfo(int process_type);
 void receiveChildInfo(void);
 
 /* Fork helpers */
-int redisFork();
+int redisFork(int type);
 int hasActiveChildProcess();
 void sendChildCOWInfo(int ptype, char *pname);
 
@@ -2494,6 +2497,7 @@ void xorDigest(unsigned char *digest, void *ptr, size_t len);
 int populateCommandTableParseFlags(struct redisCommand *c, char *strflags);
 void debugDelay(int usec);
 void killIOThreads(void);
+void killThreads(void);
 
 /* TLS stuff */
 void tlsInit(void);

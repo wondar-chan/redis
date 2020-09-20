@@ -1991,6 +1991,7 @@ int RM_GetContextFlags(RedisModuleCtx *ctx) {
 
     /* Presence of children processes. */
     if (hasActiveChildProcess()) flags |= REDISMODULE_CTX_FLAGS_ACTIVE_CHILD;
+    if (server.in_fork_child) flags |= REDISMODULE_CTX_FLAGS_IS_CHILD;
 
     return flags;
 }
@@ -6899,7 +6900,7 @@ int RM_Fork(RedisModuleForkDoneHandler cb, void *user_data) {
     }
 
     openChildInfoPipe();
-    if ((childpid = redisFork()) == 0) {
+    if ((childpid = redisFork(CHILD_TYPE_MODULE)) == 0) {
         /* Child */
         redisSetProcTitle("redis-module-fork");
     } else if (childpid == -1) {
@@ -6919,7 +6920,7 @@ int RM_Fork(RedisModuleForkDoneHandler cb, void *user_data) {
  * retcode will be provided to the done handler executed on the parent process.
  */
 int RM_ExitFromChild(int retcode) {
-    sendChildCOWInfo(CHILD_INFO_TYPE_MODULE, "Module fork");
+    sendChildCOWInfo(CHILD_TYPE_MODULE, "Module fork");
     exitFromChild(retcode);
     return REDISMODULE_OK;
 }
@@ -7174,6 +7175,20 @@ void ModuleForkDoneHandler(int exitcode, int bysignal) {
  *              int32_t progress;  // Approximate progress between 0 and 1024,
  *                                    or -1 if unknown.
  *
+ *      RedisModuleEvent_SwapDB
+ *
+ *          This event is called when a swap db command has been successfully 
+ *          Executed. 
+ *          For this event call currently there is no subevents available.
+ *
+ *          The data pointer can be casted to a RedisModuleSwapDbInfo
+ *          structure with the following fields:
+ *
+ *             int32_t dbnum_first;    // Swap Db first dbnum 
+ *             int32_t dbnum_second;   // Swap Db second dbnum 
+ *
+ *
+ *
  * The function returns REDISMODULE_OK if the module was successfully subscribed
  * for the specified event. If the API is called from a wrong context then
  * REDISMODULE_ERR is returned. */
@@ -7277,6 +7292,8 @@ void moduleFireServerEvent(uint64_t eid, int subid, void *data) {
             } else if (eid == REDISMODULE_EVENT_LOADING_PROGRESS) {
                 moduledata = data;
             } else if (eid == REDISMODULE_EVENT_CRON_LOOP) {
+                moduledata = data;
+            } else if (eid == REDISMODULE_EVENT_SWAPDB) {
                 moduledata = data;
             }
 
