@@ -2498,6 +2498,7 @@ int populateCommandTableParseFlags(struct redisCommand *c, char *strflags);
 void debugDelay(int usec);
 void killIOThreads(void);
 void killThreads(void);
+void makeThreadKillable(void);
 
 /* TLS stuff */
 void tlsInit(void);

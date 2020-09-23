@@ -31,7 +31,7 @@ OPT=$(OPTIMIZATION)
 
 # Detect if the compiler supports C11 _Atomic
 C11_ATOMIC := $(shell sh -c 'echo "\#include <stdatomic.h>" > foo.c; \
-	$(CC) -std=c11 -c foo.c -o foo.o &> /dev/null; \
+	$(CC) -std=c11 -c foo.c -o foo.o > /dev/null 2>&1; \
 	if [ -f foo.o ]; then echo "yes"; rm foo.o; fi; rm foo.c')
 ifeq ($(C11_ATOMIC),yes)
 	STD+=-std=c11
@@ -131,12 +131,21 @@ ifeq ($(uname_S),OpenBSD)
     	endif
 
 else
+ifeq ($(uname_S),NetBSD)
+	# NetBSD
+	FINAL_LIBS+= -lpthread
+	ifeq ($(USE_BACKTRACE),yes)
+	    FINAL_CFLAGS+= -DUSE_BACKTRACE -I/usr/pkg/include
+	    FINAL_LDFLAGS+= -L/usr/pkg/lib
+	    FINAL_LIBS+= -lexecinfo
+    	endif
+else
 ifeq ($(uname_S),FreeBSD)
 	# FreeBSD
 	FINAL_LIBS+= -lpthread -lexecinfo
 else
 ifeq ($(uname_S),DragonFly)
-	# FreeBSD
+	# DragonFly
 	FINAL_LIBS+= -lpthread -lexecinfo
 else
 ifeq ($(uname_S),OpenBSD)
@@ -150,6 +159,7 @@ else
 	# All the other OSes (notably Linux)
 	FINAL_LDFLAGS+= -rdynamic
 	FINAL_LIBS+=-ldl -pthread -lrt
+endif
 endif
 endif
 endif
