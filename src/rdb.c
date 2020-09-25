@@ -1315,8 +1315,8 @@ werr: /* Write error. */
 int rdbSave(char *filename, rdbSaveInfo *rsi) {
     char tmpfile[256];
     char cwd[MAXPATHLEN]; /* Current working dir path for error messages. */
-    FILE *fp;
-    rio rdb;  // redis文件IO的封装，有面向对象的意思  
+    FILE *fp = NULL;
+    rio rdb; // redis文件IO的封装，有面向对象的意思  
     int error = 0;
 
     snprintf(tmpfile,256,"temp-%d.rdb", (int) getpid());
@@ -1343,10 +1343,11 @@ int rdbSave(char *filename, rdbSaveInfo *rsi) {
         goto werr;
     }
 
-    /* 确保操作系统缓冲区没有残余数据  */
-    if (fflush(fp) == EOF) goto werr;
-    if (fsync(fileno(fp)) == -1) goto werr;
-    if (fclose(fp) == EOF) goto werr;
+    /* 确保操作系统缓冲区没有残余数据 */
+    if (fflush(fp)) goto werr;
+    if (fsync(fileno(fp))) goto werr;
+    if (fclose(fp)) { fp = NULL; goto werr; }
+    fp = NULL;
 
     /* Use RENAME to make sure the DB file is changed atomically only
      * if the generate DB file is ok. */
@@ -1374,7 +1375,7 @@ int rdbSave(char *filename, rdbSaveInfo *rsi) {
 
 werr:
     serverLog(LL_WARNING,"Write error saving DB on disk: %s", strerror(errno));
-    fclose(fp);
+    if (fp) fclose(fp);
     unlink(tmpfile);
     stopSaving(0);
     return C_ERR;
@@ -1913,7 +1914,7 @@ robj *rdbLoadObject(int rdbtype, rio *rdb, sds key) {
                     return NULL;
                 }
                 streamConsumer *consumer =
-                    streamLookupConsumer(cgroup,cname,SLC_NONE);
+                    streamLookupConsumer(cgroup,cname,SLC_NONE,NULL);
                 sdsfree(cname);
                 consumer->seen_time = rdbLoadMillisecondTime(rdb,RDB_VERSION);
                 if (rioGetReadError(rdb)) {

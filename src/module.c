@@ -2380,6 +2380,8 @@ int RM_ZsetAddFlagsToCoreFlags(int flags) {
     int retflags = 0;
     if (flags & REDISMODULE_ZADD_XX) retflags |= ZADD_XX;
     if (flags & REDISMODULE_ZADD_NX) retflags |= ZADD_NX;
+    if (flags & REDISMODULE_ZADD_GT) retflags |= ZADD_GT;
+    if (flags & REDISMODULE_ZADD_LT) retflags |= ZADD_LT;
     return retflags;
 }
 
@@ -2406,6 +2408,10 @@ int RM_ZsetAddFlagsFromCoreFlags(int flags) {
  *
  *     REDISMODULE_ZADD_XX: Element must already exist. Do nothing otherwise.
  *     REDISMODULE_ZADD_NX: Element must not exist. Do nothing otherwise.
+ *     REDISMODULE_ZADD_GT: If element exists, new score must be greater than the current score. 
+ *                          Do nothing otherwise. Can optionally be combined with XX.
+ *     REDISMODULE_ZADD_LT: If element exists, new score must be less than the current score.
+ *                          Do nothing otherwise. Can optionally be combined with XX.
  *
  * The output flags are:
  *
@@ -2947,22 +2953,22 @@ int RM_HashSet(RedisModuleKey *key, int flags, ...) {
  * As with RedisModule_HashSet() the behavior of the command can be specified
  * passing flags different than REDISMODULE_HASH_NONE:
  *
- * REDISMODULE_HASH_CFIELD: field names as null terminated C strings.
+ * REDISMODULE_HASH_CFIELDS: field names as null terminated C strings.
  *
  * REDISMODULE_HASH_EXISTS: instead of setting the value of the field
  * expecting a RedisModuleString pointer to pointer, the function just
  * reports if the field exists or not and expects an integer pointer
  * as the second element of each pair.
  *
- * Example of REDISMODULE_HASH_CFIELD:
+ * Example of REDISMODULE_HASH_CFIELDS:
  *
  *      RedisModuleString *username, *hashedpass;
- *      RedisModule_HashGet(mykey,"username",&username,"hp",&hashedpass, NULL);
+ *      RedisModule_HashGet(mykey,REDISMODULE_HASH_CFIELDS,"username",&username,"hp",&hashedpass, NULL);
  *
  * Example of REDISMODULE_HASH_EXISTS:
  *
  *      int exists;
- *      RedisModule_HashGet(mykey,argv[1],&exists,NULL);
+ *      RedisModule_HashGet(mykey,REDISMODULE_HASH_EXISTS,argv[1],&exists,NULL);
  *
  * The function returns REDISMODULE_OK on success and REDISMODULE_ERR if
  * the key is not an hash value.
@@ -5532,7 +5538,13 @@ void revokeClientAuthentication(client *c) {
 
     c->user = DefaultUser;
     c->authenticated = 0;
-    freeClientAsync(c);
+    /* We will write replies to this client later, so we can't close it
+     * directly even if async. */
+    if (c == server.current_client) {
+        c->flags |= CLIENT_CLOSE_AFTER_COMMAND;
+    } else {
+        freeClientAsync(c);
+    }
 }
 
 /* Cleanup all clients that have been authenticated with this module. This
