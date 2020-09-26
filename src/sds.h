@@ -51,10 +51,10 @@ struct __attribute__ ((__packed__)) sdshdr5 {
     char buf[];
 };
 struct __attribute__ ((__packed__)) sdshdr8 {
-    uint8_t len; /* used */
-    uint8_t alloc; /* excluding the header and null terminator */
-    unsigned char flags; /* 3 lsb of type, 5 unused bits */
-    char buf[];
+    uint8_t len; /* 已使用空间大小 */
+    uint8_t alloc; /* 总共可用的字符空间大小，应该是实际buf的大小减1(因为c字符串末尾必须是\0,不计算在内) */
+    unsigned char flags; /* 标志位，主要是识别这是sdshdr几，目前只用了3位，还有5位空余 */
+    char buf[];  /* 真正存储字符串的地方 */
 };
 struct __attribute__ ((__packed__)) sdshdr16 {
     uint16_t len; /* used */
@@ -87,9 +87,10 @@ struct __attribute__ ((__packed__)) sdshdr64 {
 #define SDS_HDR(T,s) ((struct sdshdr##T *)((s)-(sizeof(struct sdshdr##T))))
 #define SDS_TYPE_5_LEN(f) ((f)>>SDS_TYPE_BITS)
 
+// 获取sds的长度  
 static inline size_t sdslen(const sds s) {
     unsigned char flags = s[-1];  // -1 相当于获取到了sdshdr中的flag字段  
-    switch(flags&SDS_TYPE_MASK) {  
+    switch(flags&SDS_TYPE_MASK) {   // SDS_TYPE_MASK = 7
         case SDS_TYPE_5:
             return SDS_TYPE_5_LEN(flags);
         case SDS_TYPE_8:
@@ -183,7 +184,7 @@ static inline void sdsinclen(sds s, size_t inc) {
     }
 }
 
-/* sdsalloc() = sdsavail() + sdslen() */
+/* 返回sds的alloc  sdsalloc() = sdsavail() + sdslen() */
 static inline size_t sdsalloc(const sds s) {
     unsigned char flags = s[-1];
     switch(flags&SDS_TYPE_MASK) {
@@ -222,57 +223,57 @@ static inline void sdssetalloc(sds s, size_t newlen) {
     }
 }
 
-sds sdsnewlen(const void *init, size_t initlen);
-sds sdsnew(const char *init);
-sds sdsempty(void);
-sds sdsdup(const sds s);
-void sdsfree(sds s);
-sds sdsgrowzero(sds s, size_t len);
-sds sdscatlen(sds s, const void *t, size_t len);
-sds sdscat(sds s, const char *t);
-sds sdscatsds(sds s, const sds t);
-sds sdscpylen(sds s, const char *t, size_t len);
-sds sdscpy(sds s, const char *t);
+sds sdsnewlen(const void *init, size_t initlen);  // 新建一个容量为initlen的sds
+sds sdsnew(const char *init); // 新建sds，字符串为null，默认长度0 
+sds sdsempty(void);  // 新建空字符“” 
+sds sdsdup(const sds s); // 根据s的实际长度创建新的sds，目的是降低内存的占用
+void sdsfree(sds s); // 释放sds 
+sds sdsgrowzero(sds s, size_t len); // 把sds增长到指定的长度，增长出来的新的空间用0填充 
+sds sdscatlen(sds s, const void *t, size_t len); // 在sds上拼接字符串t的指定长度部分 
+sds sdscat(sds s, const char *t);  // 把字符串t拼接到sds上 
+sds sdscatsds(sds s, const sds t); // 把两个sds拼接在一起  
+sds sdscpylen(sds s, const char *t, size_t len); //  把字符串t指定长度的部分拷贝到sds上 
+sds sdscpy(sds s, const char *t); // 把字符串t拷贝到sds上 
 
-sds sdscatvprintf(sds s, const char *fmt, va_list ap);
+sds sdscatvprintf(sds s, const char *fmt, va_list ap); // 把用printf格式化后的字符拼接到sds上 
 #ifdef __GNUC__
-sds sdscatprintf(sds s, const char *fmt, ...)
+sds sdscatprintf(sds s, const char *fmt, ...)  
     __attribute__((format(printf, 2, 3)));
 #else
 sds sdscatprintf(sds s, const char *fmt, ...);
 #endif
 
-sds sdscatfmt(sds s, char const *fmt, ...);
-sds sdstrim(sds s, const char *cset);
-void sdsrange(sds s, ssize_t start, ssize_t end);
-void sdsupdatelen(sds s);
-void sdsclear(sds s);
-int sdscmp(const sds s1, const sds s2);
+sds sdscatfmt(sds s, char const *fmt, ...);   // 将多个参数格式化成一个字符串后拼接到sds上 
+sds sdstrim(sds s, const char *cset);  // 在sds中移除开头或者末尾在cset中的字符  
+void sdsrange(sds s, ssize_t start, ssize_t end);  // 截取sds的子串 
+void sdsupdatelen(sds s); // 更新sds字符串的长度 
+void sdsclear(sds s);  // 清空sds中的内容，但不释放空间 
+int sdscmp(const sds s1, const sds s2);  // sds字符串比较大小 
 sds *sdssplitlen(const char *s, ssize_t len, const char *sep, int seplen, int *count);
 void sdsfreesplitres(sds *tokens, int count);
-void sdstolower(sds s);
-void sdstoupper(sds s);
-sds sdsfromlonglong(long long value);
-sds sdscatrepr(sds s, const char *p, size_t len);
+void sdstolower(sds s); // 字符串转小写
+void sdstoupper(sds s);  // 字符串转大写
+sds sdsfromlonglong(long long value);  // 把一个long long型的数转成sds  
+sds sdscatrepr(sds s, const char *p, size_t len); 
 sds *sdssplitargs(const char *line, int *argc);
 sds sdsmapchars(sds s, const char *from, const char *to, size_t setlen);
-sds sdsjoin(char **argv, int argc, char *sep);
-sds sdsjoinsds(sds *argv, int argc, const char *sep, size_t seplen);
+sds sdsjoin(char **argv, int argc, char *sep); // 把字符串数组按指定的分隔符拼接起来
+sds sdsjoinsds(sds *argv, int argc, const char *sep, size_t seplen); // 把sds数组按指定的分隔符拼接起来
 
-/* Low level functions exposed to the user API */
-sds sdsMakeRoomFor(sds s, size_t addlen);
-void sdsIncrLen(sds s, ssize_t incr);
-sds sdsRemoveFreeSpace(sds s);
-size_t sdsAllocSize(sds s);
-void *sdsAllocPtr(sds s);
+/* sds底层api */
+sds sdsMakeRoomFor(sds s, size_t addlen);  // sds扩容
+void sdsIncrLen(sds s, ssize_t incr); // 扩容指定长度
+sds sdsRemoveFreeSpace(sds s); // 释放sds占用的多余空间
+size_t sdsAllocSize(sds s); // 返回sds总共占用的内存大小
+void *sdsAllocPtr(sds s); // 返回sds实际的起始位置指针
 
 /* Export the allocator used by SDS to the program using SDS.
  * Sometimes the program SDS is linked to, may use a different set of
  * allocators, but may want to allocate or free things that SDS will
  * respectively free or allocate. */
-void *sds_malloc(size_t size);
-void *sds_realloc(void *ptr, size_t size);
-void sds_free(void *ptr);
+void *sds_malloc(size_t size); // 为sds分配空间 
+void *sds_realloc(void *ptr, size_t size); // 
+void sds_free(void *ptr);  // 释放sds空间 
 
 #ifdef REDIS_TEST
 int sdsTest(int argc, char *argv[]);
