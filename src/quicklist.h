@@ -35,25 +35,25 @@
 
 /* Node, quicklist, and Iterator are the only data structures used currently. */
 
-/* quicklistNode is a 32 byte struct describing a ziplist for a quicklist.
- * We use bit fields keep the quicklistNode at 32 bytes.
- * count: 16 bits, max 65536 (max zl bytes is 65k, so max count actually < 32k).
- * encoding: 2 bits, RAW=1, LZF=2.
- * container: 2 bits, NONE=1, ZIPLIST=2.
- * recompress: 1 bit, bool, true if node is temporary decompressed for usage.
- * attempted_compress: 1 bit, boolean, used for verifying during testing.
- * extra: 10 bits, free for future use; pads out the remainder of 32 bits */
+/* quicklistNode 中用了32个字节存储一个节点，三个指针总计24字节，加sz和后面按位用的几个int，总计32字节
+ * 用了32个bit来保存ziplist的信息。 
+ * count: 16位，最大65536(最大ziplist的大小是65k，所以实际上count小于32k)
+ * encoding: 2位，RAW=1, LZF=2. 
+ * container: 2位，NONE=1, ZIPLIST=2. 
+ * recompress: 1位，bool类型，如果是true表示当前节点是临时使用的解压后的节点. 
+ * attempted_compress: 1位， boolean类型，基本是在测试中使用  
+ * extra: 用剩下的10位，暂时没有用到，留给之后的feature */
 typedef struct quicklistNode {
     struct quicklistNode *prev;
     struct quicklistNode *next;
-    unsigned char *zl;
-    unsigned int sz;             /* ziplist size in bytes */
-    unsigned int count : 16;     /* count of items in ziplist */
+    unsigned char *zl;           /* quicklist节点对应的ziplist */
+    unsigned int sz;             /* ziplist的字节数 */
+    unsigned int count : 16;     /* ziplist的item数*/
     unsigned int encoding : 2;   /* RAW==1 or LZF==2 */
     unsigned int container : 2;  /* NONE==1 or ZIPLIST==2 */
-    unsigned int recompress : 1; /* was this node previous compressed? */
+    unsigned int recompress : 1; /* 这个节点以前压缩过吗？ */
     unsigned int attempted_compress : 1; /* node can't compress; too small */
-    unsigned int extra : 10; /* more bits to steal for future usage */
+    unsigned int extra : 10; /* 未使用到的10位 */
 } quicklistNode;
 
 /* quicklistLZF is a 4+N byte struct holding 'sz' followed by 'compressed'.
@@ -88,8 +88,7 @@ typedef struct quicklistBookmark {
 /* 64-bit */
 #   define QL_FILL_BITS 16
 #   define QL_COMP_BITS 16
-#   define QL_BM_BITS 4 /* we can encode more, but we rather limit the user
-                           since they cause performance degradation. */
+#   define QL_BM_BITS 4 /* we can encode more, but we rather limit the user since they cause performance degradation. */
 #else
 #   error unknown arch bits count
 #endif
@@ -106,10 +105,10 @@ typedef struct quicklist {
     quicklistNode *head;
     quicklistNode *tail;
     unsigned long count;        /* 在所有的ziplist中的entry总数 */
-    unsigned long len;          /* nquicklist节点总数 */
+    unsigned long len;          /* quicklist节点总数 */
     int fill : QL_FILL_BITS;              /* fill factor for individual nodes */
     unsigned int compress : QL_COMP_BITS; /* depth of end nodes not to compress;0=off */
-    unsigned int bookmark_count: QL_BM_BITS;
+    unsigned int bookmark_count: QL_BM_BITS;  
     quicklistBookmark bookmarks[];
 } quicklist;
 

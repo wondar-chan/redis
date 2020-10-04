@@ -34,21 +34,21 @@
 #define ZIPLIST_HEAD 0
 #define ZIPLIST_TAIL 1
 
-unsigned char *ziplistNew(void);
-unsigned char *ziplistMerge(unsigned char **first, unsigned char **second);
-unsigned char *ziplistPush(unsigned char *zl, unsigned char *s, unsigned int slen, int where);
-unsigned char *ziplistIndex(unsigned char *zl, int index);
-unsigned char *ziplistNext(unsigned char *zl, unsigned char *p);
-unsigned char *ziplistPrev(unsigned char *zl, unsigned char *p);
-unsigned int ziplistGet(unsigned char *p, unsigned char **sval, unsigned int *slen, long long *lval);
-unsigned char *ziplistInsert(unsigned char *zl, unsigned char *p, unsigned char *s, unsigned int slen);
-unsigned char *ziplistDelete(unsigned char *zl, unsigned char **p);
-unsigned char *ziplistDeleteRange(unsigned char *zl, int index, unsigned int num);
-unsigned int ziplistCompare(unsigned char *p, unsigned char *s, unsigned int slen);
-unsigned char *ziplistFind(unsigned char *p, unsigned char *vstr, unsigned int vlen, unsigned int skip);
-unsigned int ziplistLen(unsigned char *zl);
-size_t ziplistBlobLen(unsigned char *zl);
-void ziplistRepr(unsigned char *zl);
+unsigned char *ziplistNew(void);  // 新建ziplist
+unsigned char *ziplistMerge(unsigned char **first, unsigned char **second);  // 合并两个ziplist 
+unsigned char *ziplistPush(unsigned char *zl, unsigned char *s, unsigned int slen, int where); // 在ziplist头部或者尾部push一个节点 
+unsigned char *ziplistIndex(unsigned char *zl, int index); // 找到某个下标的节点  
+unsigned char *ziplistNext(unsigned char *zl, unsigned char *p);  // 找到p节点的下一个节点 
+unsigned char *ziplistPrev(unsigned char *zl, unsigned char *p);  // 找到p节点的前一个节点  
+unsigned int ziplistGet(unsigned char *p, unsigned char **sval, unsigned int *slen, long long *lval);  // 获取entry中存储的具体内容
+unsigned char *ziplistInsert(unsigned char *zl, unsigned char *p, unsigned char *s, unsigned int slen);  // 插入
+unsigned char *ziplistDelete(unsigned char *zl, unsigned char **p); // 删除  
+unsigned char *ziplistDeleteRange(unsigned char *zl, int index, unsigned int num); // 删除某个下标区间内的节点 
+unsigned int ziplistCompare(unsigned char *p, unsigned char *s, unsigned int slen);  // 比较两个节点的大小 
+unsigned char *ziplistFind(unsigned char *p, unsigned char *vstr, unsigned int vlen, unsigned int skip); // 找到某个特定值的节点
+unsigned int ziplistLen(unsigned char *zl);  // ziplist的长度  
+size_t ziplistBlobLen(unsigned char *zl);  // ziplist的存储空间大小 
+void ziplistRepr(unsigned char *zl);   // 
 
 #ifdef REDIS_TEST
 int ziplistTest(int argc, char *argv[]);

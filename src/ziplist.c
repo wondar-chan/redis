@@ -1,152 +1,104 @@
-/* The ziplist is a specially encoded dually linked list that is designed
- * to be very memory efficient. It stores both strings and integer values,
- * where integers are encoded as actual integers instead of a series of
- * characters. It allows push and pop operations on either side of the list
- * in O(1) time. However, because every operation requires a reallocation of
- * the memory used by the ziplist, the actual complexity is related to the
- * amount of memory used by the ziplist.
- *
+/* ziplist是为了提高存储效率而设计的一种特殊编码的双向链表。它可以存储字符串或者整数，
+ * 存储整数时是采用整数的二进制而不是字符串形式存储。他能在O(1)的时间复杂度下完成list两端
+ * 的push和pop操作。但是因为每次操作都需要重新分配ziplist的内存，所以实际复杂度和ziplist
+ * 的内存使用量相关。    
  * ----------------------------------------------------------------------------
  *
- * ZIPLIST OVERALL LAYOUT
+ * ZIPLIST整体 
  * ======================
  *
- * The general layout of the ziplist is as follows:
+ * ziplist的结构如下 
  *
  * <zlbytes> <zltail> <zllen> <entry> <entry> ... <entry> <zlend>
  *
- * NOTE: all fields are stored in little endian, if not specified otherwise.
- *
- * <uint32_t zlbytes> is an unsigned integer to hold the number of bytes that
- * the ziplist occupies, including the four bytes of the zlbytes field itself.
- * This value needs to be stored to be able to resize the entire structure
- * without the need to traverse it first.
- *
- * <uint32_t zltail> is the offset to the last entry in the list. This allows
- * a pop operation on the far side of the list without the need for full
- * traversal.
- *
- * <uint16_t zllen> is the number of entries. When there are more than
- * 2^16-2 entries, this value is set to 2^16-1 and we need to traverse the
- * entire list to know how many items it holds.
- *
- * <uint8_t zlend> is a special entry representing the end of the ziplist.
- * Is encoded as a single byte equal to 255. No other normal entry starts
- * with a byte set to the value of 255.
+ * 注意: 除非有特殊声明，所有的域都是按小端存储的。 
+ * <zlbytes>: 32位无符号整型，表示整个ziplist所占的空间大小，包含了zlbytes所占的4个字节。
+ * 这个字段可以在重置整个ziplist大小时不需要遍历整个list来确定大小，空间换时间。  
+ * <zltail>: 32位无符号整型，表示整个list中最后一项所在的偏移量，方便在尾部做pop操作。
+ * <zllen>: 16位，表示ziplist中所存储的entry数量，但是注意，这里最多表示2^16-2个entry，
+ * 如果是2^16-1有特殊含义，2^16-1表示存储数量超过了2^16-2个，但具体是多少个得遍历一次才
+ * 能知道。 
+ * <zlend>: 8位，ziplist的末尾表示，值固定是255. 
  *
  * ZIPLIST ENTRIES
  * ===============
- *
- * Every entry in the ziplist is prefixed by metadata that contains two pieces
- * of information. First, the length of the previous entry is stored to be
- * able to traverse the list from back to front. Second, the entry encoding is
- * provided. It represents the entry type, integer or string, and in the case
- * of strings it also represents the length of the string payload.
- * So a complete entry is stored like this:
+ * 
+ * ziplist中的每个entry这个entry的元信息，包含两部分，第一部分存储了前面一个entry所占用的字
+ * 节数，方便从后往前遍历ziplist。第二部分表示entry的编码形式，它表明了entry的类型，整数还是
+ * 字符串，如果是string的话还标识出了string的长度。  
+ * 完整的entry是这样的：  
  *
  * <prevlen> <encoding> <entry-data>
  *
- * Sometimes the encoding represents the entry itself, like for small integers
- * as we'll see later. In such a case the <entry-data> part is missing, and we
- * could have just:
+ * 部分情况下，encoding字段也可能会是entry本身，比如一些比较小的数字就可以直接存在encoding
+ * 字段里了。这种情况下<entry-data>就会缺失，整个entry就会像下面这样。 
  *
  * <prevlen> <encoding>
  *
- * The length of the previous entry, <prevlen>, is encoded in the following way:
- * If this length is smaller than 254 bytes, it will only consume a single
- * byte representing the length as an unsinged 8 bit integer. When the length
- * is greater than or equal to 254, it will consume 5 bytes. The first byte is
- * set to 254 (FE) to indicate a larger value is following. The remaining 4
- * bytes take the length of the previous entry as value.
+ * <prevlen> 表示前面一个entry的长度，编码方式如下： 
+ * 如果长度小于254，那就只用一个字节来表示长度，如果长度大于等于254就用5个字节，第一个字节
+ * 是固定值254(FE)来标识这是个特殊的数据，剩下的4个字节来表示实际的长度。  
  *
- * So practically an entry is encoded in the following way:
- *
+ * 所以实际上一个entry可能是下面这样的： 
  * <prevlen from 0 to 253> <encoding> <entry>
- *
- * Or alternatively if the previous entry length is greater than 253 bytes
- * the following encoding is used:
- *
+ * 当前面一个entry长度超过253时是下面这样的：  
  * 0xFE <4 bytes unsigned little endian prevlen> <encoding> <entry>
  *
- * The encoding field of the entry depends on the content of the
- * entry. When the entry is a string, the first 2 bits of the encoding first
- * byte will hold the type of encoding used to store the length of the string,
- * followed by the actual length of the string. When the entry is an integer
- * the first 2 bits are both set to 1. The following 2 bits are used to specify
- * what kind of integer will be stored after this header. An overview of the
- * different types and encodings is as follows. The first byte is always enough
- * to determine the kind of entry.
+ * entry的encoding取决于entry的内容，当entry是个string时，encoding的前两字节存储了字符
+ * 串的长度。当entry是一个整数的时候，前两字节默认都是1，后面两字节标识出后面存的是哪种类型的
+ * 整数，不同的encoding类型示例如下。第一个字节就足够判断出entry是什么类型了。 
  *
- * |00pppppp| - 1 byte
- *      String value with length less than or equal to 63 bytes (6 bits).
- *      "pppppp" represents the unsigned 6 bit length.
- * |01pppppp|qqqqqqqq| - 2 bytes
- *      String value with length less than or equal to 16383 bytes (14 bits).
- *      IMPORTANT: The 14 bit number is stored in big endian.
- * |10000000|qqqqqqqq|rrrrrrrr|ssssssss|tttttttt| - 5 bytes
- *      String value with length greater than or equal to 16384 bytes.
- *      Only the 4 bytes following the first byte represents the length
- *      up to 2^32-1. The 6 lower bits of the first byte are not used and
- *      are set to zero.
- *      IMPORTANT: The 32 bit number is stored in big endian.
- * |11000000| - 3 bytes
- *      Integer encoded as int16_t (2 bytes).
- * |11010000| - 5 bytes
- *      Integer encoded as int32_t (4 bytes).
- * |11100000| - 9 bytes
- *      Integer encoded as int64_t (8 bytes).
- * |11110000| - 4 bytes
- *      Integer encoded as 24 bit signed (3 bytes).
- * |11111110| - 2 bytes
- *      Integer encoded as 8 bit signed (1 byte).
- * |1111xxxx| - (with xxxx between 0001 and 1101) immediate 4 bit integer.
- *      Unsigned integer from 0 to 12. The encoded value is actually from
- *      1 to 13 because 0000 and 1111 can not be used, so 1 should be
- *      subtracted from the encoded 4 bit value to obtain the right value.
- * |11111111| - End of ziplist special entry.
+ * |00pppppp| - 1字节
+ *      长度小于或者等于63的String类型，'pppppp'无符号6位数标识string长度 
+ * |01pppppp|qqqqqqqq| - 2字节
+ *      长度小于或者等于16383的String类型(14位)，注意：14位'pppppp'采用大端的方式存储 
+ * |10000000|qqqqqqqq|rrrrrrrr|ssssssss|tttttttt| - 5字节 
+ *      长度大于等于16384的String类型，第二字节开始的qqrrsstt都是用来存储字符串长度的
+ *      二进制位，可表示的字符串长度最大2^32-1，第一字节的低6位没有用，所以都是0. 
+ *      注意: 32位数采用大端的方式存储  
+ * |11000000| - 3字节
+ *      存储int16_t (2字节).
+ * |11010000| - 5字节
+ *      存储int32_t (4字节).
+ * |11100000| - 9字节
+ *      存储int64_t (8字节).
+ * |11110000| - 4字节
+ *      24位有符号类型整数 (3字节).
+ * |11111110| - 2字节
+ *      8位有符号类型整数 (1字节).
+ * |1111xxxx| - (xxxx在0001和1101之间) 4位无符号整数.
+ *      0到12的无符号整数.编码值实际上是从1到13，因为0000和1111不能使用，要留出一位
+ *      表示0，所以应该从编码值中减去1才是准确值 
+ * |11111111| - ziplist结尾标识. 
  *
- * Like for the ziplist header, all the integers are represented in little
- * endian byte order, even when this code is compiled in big endian systems.
+ * 与ziplist头一样，所有的整数都是以小端字节顺序表示的，即使这段代码是在大端系统中编译的。
  *
- * EXAMPLES OF ACTUAL ZIPLISTS
+ * 实际的ZIPLIST样例 
  * ===========================
  *
  * The following is a ziplist containing the two elements representing
  * the strings "2" and "5". It is composed of 15 bytes, that we visually
  * split into sections:
- *
+ * 下面的ziplist包含字符串"2"和"5“，它被压缩后只有15字节，它在内存中的数据16进制表示如下。
+ * 
  *  [0f 00 00 00] [0c 00 00 00] [02 00] [00 f3] [02 f6] [ff]
  *        |             |          |       |       |     |
  *     zlbytes        zltail    entries   "2"     "5"   end
  *
- * The first 4 bytes represent the number 15, that is the number of bytes
- * the whole ziplist is composed of. The second 4 bytes are the offset
- * at which the last ziplist entry is found, that is 12, in fact the
- * last entry, that is "5", is at offset 12 inside the ziplist.
- * The next 16 bit integer represents the number of elements inside the
- * ziplist, its value is 2 since there are just two elements inside.
- * Finally "00 f3" is the first entry representing the number 2. It is
- * composed of the previous entry length, which is zero because this is
- * our first entry, and the byte F3 which corresponds to the encoding
- * |1111xxxx| with xxxx between 0001 and 1101. We need to remove the "F"
- * higher order bits 1111, and subtract 1 from the "3", so the entry value
- * is "2". The next entry has a prevlen of 02, since the first entry is
- * composed of exactly two bytes. The entry itself, F6, is encoded exactly
- * like the first entry, and 6-1 = 5, so the value of the entry is 5.
- * Finally the special entry FF signals the end of the ziplist.
+ * 前4字节是数字15，表示整个ziplist总计占用15字节。接下来的4个字节是最后一个ziplist entry
+ * 的偏移量，具体偏移量是12，在上面例子中标识最后一个entry 字符串”5“在ziplist中的12位置。
+ * 接下来的16位表示ziplist中的元素数量，这里是2，表示只有2个元素。  
+ * 接下来的"00 f3"是第一个entry，它里面的prelen是0，因为这是第一个entry，F3对应的
+ * 编码是|1111xxxx| - (xxxx在0001和1101之间)，我们需要移除高4位的1111得到"3",然后
+ * 减去1，才是真正的值”2“，第一个entry正好被压缩为2字节。下一个entry F5，同样的方式
+ * 可以得到"5",最后的FF表示ziplist的结尾。 
  *
- * Adding another element to the above string with the value "Hello World"
- * allows us to show how the ziplist encodes small strings. We'll just show
- * the hex dump of the entry itself. Imagine the bytes as following the
- * entry that stores "5" in the ziplist above:
+ * 在上面的ziplist中添加字符串"Hello World"，假设它插入到”5“的后面，生成的entry16进制表示如下：  
  *
  * [02] [0b] [48 65 6c 6c 6f 20 57 6f 72 6c 64]
  *
- * The first byte, 02, is the length of the previous entry. The next
- * byte represents the encoding in the pattern |00pppppp| that means
- * that the entry is a string of length <pppppp>, so 0B means that
- * an 11 bytes string follows. From the third byte (48) to the last (64)
- * there are just the ASCII characters for "Hello World".
+ * 第一个字节02，表示前一个entry的长度，下一个字节|00pppppp|，表示是一个短字符串，长度是<pppppp>,
+ * 所以这里0B表示这里是一个11个字节长度的字符串。接下的48到最后的64是"Hello World"的ASCII编码。 
  *
  * ----------------------------------------------------------------------------
  *
@@ -179,7 +131,7 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
-/* 压缩列表的实现，具体可以参考博文：https://segmentfault.com/a/1190000016901154 
+/* 压缩列表的实现，具体可以参考博文：https://blog.csdn.net/xindoo/article/details/108923557
  */
 
 #include <stdio.h>
@@ -201,7 +153,8 @@
                                AA BB CC DD are a 4 bytes unsigned integer
                                representing the previous entry len. */
 
-/* Different encoding/length possibilities */
+/* Different encoding/length possibilities
+不同的编码长度 */
 #define ZIP_STR_MASK 0xc0
 #define ZIP_INT_MASK 0x30
 #define ZIP_STR_06B (0 << 6)
@@ -272,21 +225,13 @@
  * Note that this is not how the data is actually encoded, is just what we
  * get filled by a function in order to operate more easily. */
 typedef struct zlentry {
-    unsigned int prevrawlensize; /* Bytes used to encode the previous entry len*/
+    unsigned int prevrawlensize; /* 内存中编码后的prevrawlen用了多少字节 */
     unsigned int prevrawlen;     /* 前一个entry占用的长度，主要是为了entry之间跳转 */
-    unsigned int lensize;        /* Bytes used to encode this entry type/len.
-                                    For example strings have a 1, 2 or 5 bytes
-                                    header. Integers always use a single byte.*/
-    unsigned int len;            /* 当前entry的长度，如果是string则表示string的长度，
-                                    如果是整数，则len依赖于具体数值大小。
-                                  */
-    unsigned int headersize;     /* prevrawlensize + lensize. */
-    unsigned char encoding;      /* Set to ZIP_STR_* or ZIP_INT_* depending on
-                                    the entry encoding. However for 4 bits
-                                    immediate integers this can assume a range
-                                    of values and must be range-checked. */
-    unsigned char *p;            /* Pointer to the very start of the entry, that
-                                    is, this points to prev-entry-len field. */
+    unsigned int lensize;        /* 内存中编码后的len用了多少字节 */
+    unsigned int len;            /* 当前entry的长度，如果是string则表示string的长度，如果是整数，则len依赖于具体数值大小。*/
+    unsigned int headersize;     /* prevrawlensize + lensize. entry的head部分用了多少字节 */
+    unsigned char encoding;      /* 当前entry的编码格式 */
+    unsigned char *p;            /* 指向数据域的指针 */
 } zlentry;
 
 #define ZIPLIST_ENTRY_ZERO(zle) { \
@@ -577,8 +522,7 @@ void zipEntry(unsigned char *p, zlentry *e) {
 
 /* 创建一个新的ziplist 
  * zlbytes|zltail|zllen|entry1|entry2|..|entryN|zlend
- * 占用的空间|尾节点偏移|总结点数|entry|255(标识尾部) 
- * */
+ * 占用的空间|尾节点偏移|总结点数|entry|255(标识尾部) */
 unsigned char *ziplistNew(void) {
     unsigned int bytes = ZIPLIST_HEADER_SIZE+ZIPLIST_END_SIZE;
     unsigned char *zl = zmalloc(bytes);
@@ -589,7 +533,7 @@ unsigned char *ziplistNew(void) {
     return zl;
 }
 
-/* Resize the ziplist. */
+/* 重新生成一个新大小的zl替换掉原来的zl. */
 unsigned char *ziplistResize(unsigned char *zl, unsigned int len) {
     zl = zrealloc(zl,len);
     ZIPLIST_BYTES(zl) = intrev32ifbe(len);
@@ -728,7 +672,7 @@ unsigned char *__ziplistDelete(unsigned char *zl, unsigned char *p, unsigned int
         deleted++;
     }
 
-    totlen = p-first.p; /* Bytes taken by the element(s) to delete. */
+    totlen = p-first.p; /* 删除元素后减少的内存空间(字节) */
     if (totlen > 0) {
         if (p[0] != ZIP_END) {
             /* Storing `prevrawlen` in this entry may increase or decrease the
@@ -757,7 +701,7 @@ unsigned char *__ziplistDelete(unsigned char *zl, unsigned char *p, unsigned int
                    intrev32ifbe(intrev32ifbe(ZIPLIST_TAIL_OFFSET(zl))+nextdiff);
             }
 
-            /* Move tail to the front of the ziplist */
+            /* 把tail移动到ziplist的前面*/
             memmove(first.p,p,
                 intrev32ifbe(ZIPLIST_BYTES(zl))-(p-zl)-1);
         } else {
@@ -766,10 +710,10 @@ unsigned char *__ziplistDelete(unsigned char *zl, unsigned char *p, unsigned int
                 intrev32ifbe((first.p-zl)-first.prevrawlen);
         }
 
-        /* Resize and update length */
+        /* 更新ziplist大小 */
         offset = first.p-zl;
         zl = ziplistResize(zl, intrev32ifbe(ZIPLIST_BYTES(zl))-totlen+nextdiff);
-        ZIPLIST_INCR_LENGTH(zl,-deleted);
+        ZIPLIST_INCR_LENGTH(zl,-deleted); // 更新zllen 
         p = zl+offset;
 
         /* When nextdiff != 0, the raw length of the next entry has changed, so
@@ -792,7 +736,7 @@ unsigned char *__ziplistInsert(unsigned char *zl, unsigned char *p, unsigned cha
                                     we use it uninitialized. */
     zlentry tail;
 
-    /* Find out prevlen for the entry that is inserted. */
+    /* 找到前一个节点计算出prevlensize和prevlen */
     if (p[0] != ZIP_END) {
         ZIP_DECODE_PREVLEN(p, prevlensize, prevlen);
     } else {
@@ -828,10 +772,11 @@ unsigned char *__ziplistInsert(unsigned char *zl, unsigned char *p, unsigned cha
 
     /* Store offset because a realloc may change the address of zl. */
     offset = p-zl;
+    // 计算出需要的内存容量，然后重新生成一个新大小的zl替换掉原来的zl
     zl = ziplistResize(zl,curlen+reqlen+nextdiff);
     p = zl+offset;
 
-    /* Apply memory move when necessary and update tail offset. */
+    /* 迁移数据，然后更新tail的offset */
     if (p[0] != ZIP_END) {
         /* Subtract one because of the ZIP_END bytes */
         memmove(p+reqlen,p-nextdiff,curlen-offset-1+nextdiff);
@@ -867,7 +812,7 @@ unsigned char *__ziplistInsert(unsigned char *zl, unsigned char *p, unsigned cha
         p = zl+offset;
     }
 
-    /* Write the entry */
+    /* 写入数据 */
     p += zipStorePrevEntryLength(p,prevlen);
     p += zipStoreEntryEncoding(p,encoding,slen);
     if (ZIP_IS_STR(encoding)) {
@@ -1068,10 +1013,9 @@ unsigned char *ziplistPrev(unsigned char *zl, unsigned char *p) {
     }
 }
 
-/* Get entry pointed to by 'p' and store in either '*sstr' or 'sval' depending
- * on the encoding of the entry. '*sstr' is always set to NULL to be able
- * to find out whether the string pointer or the integer value was set.
- * Return 0 if 'p' points to the end of the ziplist, 1 otherwise. */
+/*  获取“p”指向的entry，并根据entry的编码，把里面的字符串或者数值解析后写入到sstr或者sval中。
+ * sstr总是设置为空，以便能够确定是否确定字符串指针或数值指针被设置了值。如果“p”指向ziplist的
+ * 结尾，则返回0，否则返回1 */
 unsigned int ziplistGet(unsigned char *p, unsigned char **sstr, unsigned int *slen, long long *sval) {
     zlentry entry;
     if (p == NULL || p[0] == ZIP_END) return 0;
@@ -1145,12 +1089,13 @@ unsigned int ziplistCompare(unsigned char *p, unsigned char *sstr, unsigned int 
 }
 
 /* Find pointer to the entry equal to the specified entry. Skip 'skip' entries
- * between every comparison. Returns NULL when the field could not be found. */
+ * between every comparison. Returns NULL when the field could not be found.
+ * 在list中查找特定的节点 */
 unsigned char *ziplistFind(unsigned char *p, unsigned char *vstr, unsigned int vlen, unsigned int skip) {
     int skipcnt = 0;
     unsigned char vencoding = 0;
     long long vll = 0;
-
+    // 遍历ziplist，直到末尾
     while (p[0] != ZIP_END) {
         unsigned int prevlensize, encoding, lensize, len;
         unsigned char *q;

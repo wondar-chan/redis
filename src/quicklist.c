@@ -158,13 +158,14 @@ REDIS_STATIC quicklistNode *quicklistCreateNode(void) {
 /* Return cached quicklist count */
 unsigned long quicklistCount(const quicklist *ql) { return ql->count; }
 
-/* Free entire quicklist. */
+/* 释放整个quicklist. */
 void quicklistRelease(quicklist *quicklist) {
     unsigned long len;
     quicklistNode *current, *next;
 
     current = quicklist->head;
     len = quicklist->len;
+    // 逐个释放ziplist
     while (len--) {
         next = current->next;
 
