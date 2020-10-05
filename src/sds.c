@@ -87,6 +87,20 @@ static inline char sdsReqType(size_t string_size) {
 #endif
 }
 
+static inline size_t sdsTypeMaxSize(char type) {
+    if (type == SDS_TYPE_5)
+        return (1<<5) - 1;
+    if (type == SDS_TYPE_8)
+        return (1<<8) - 1;
+    if (type == SDS_TYPE_16)
+        return (1<<16) - 1;
+#if (LONG_MAX == LLONG_MAX)
+    if (type == SDS_TYPE_32)
+        return (1ll<<32) - 1;
+#endif
+    return -1; /* this is equivalent to the max SDS_TYPE_64 or SDS_TYPE_32 */
+}
+
 /* Create a new sds string with the content specified by the 'init' pointer
  * and 'initlen'.
  * 新建一个sds字符串，包含特殊的初始化指针和初始长度  
@@ -110,8 +124,9 @@ sds sdsnewlen(const void *init, size_t initlen) {
     if (type == SDS_TYPE_5 && initlen == 0) type = SDS_TYPE_8;
     int hdrlen = sdsHdrSize(type);
     unsigned char *fp; /* flags pointer. */
+    size_t usable;
 
-    sh = s_malloc(hdrlen+initlen+1);
+    sh = s_malloc_usable(hdrlen+initlen+1, &usable);
     if (sh == NULL) return NULL;
     if (init==SDS_NOINIT)
         init = NULL;
@@ -121,6 +136,9 @@ sds sdsnewlen(const void *init, size_t initlen) {
      * 根据s和hdrlen计算出来 */
     s = (char*)sh+hdrlen;  
     fp = ((unsigned char*)s)-1;
+    usable = usable-hdrlen-1;
+    if (usable > sdsTypeMaxSize(type))
+        usable = sdsTypeMaxSize(type);
     switch(type) {
         case SDS_TYPE_5: {
             *fp = type | (initlen << SDS_TYPE_BITS);
@@ -129,28 +147,28 @@ sds sdsnewlen(const void *init, size_t initlen) {
         case SDS_TYPE_8: {
             SDS_HDR_VAR(8,s);
             sh->len = initlen;
-            sh->alloc = initlen;
+            sh->alloc = usable;
             *fp = type;
             break;
         }
         case SDS_TYPE_16: {
             SDS_HDR_VAR(16,s);
             sh->len = initlen;
-            sh->alloc = initlen;
+            sh->alloc = usable;
             *fp = type;
             break;
         }
         case SDS_TYPE_32: {
             SDS_HDR_VAR(32,s);
             sh->len = initlen;
-            sh->alloc = initlen;
+            sh->alloc = usable;
             *fp = type;
             break;
         }
         case SDS_TYPE_64: {
             SDS_HDR_VAR(64,s);
             sh->len = initlen;
-            sh->alloc = initlen;
+            sh->alloc = usable;
             *fp = type;
             break;
         }
@@ -216,6 +234,7 @@ sds sdsMakeRoomFor(sds s, size_t addlen) {
     size_t len, newlen;
     char type, oldtype = s[-1] & SDS_TYPE_MASK; // SDS_TYPE_MASK = 7 
     int hdrlen;
+    size_t usable;
 
     /* 如果有足够的剩余空间，直接返回 */
     if (avail >= addlen) return s;
@@ -236,12 +255,12 @@ sds sdsMakeRoomFor(sds s, size_t addlen) {
 
     hdrlen = sdsHdrSize(type);
     if (oldtype==type) {
-        newsh = s_realloc(sh, hdrlen+newlen+1);
+        newsh = s_realloc_usable(sh, hdrlen+newlen+1, &usable);
         if (newsh == NULL) return NULL;
         s = (char*)newsh+hdrlen;
     } else {
         // 扩容其实就是申请新的空间，然后把旧数据挪过去  
-        newsh = s_malloc(hdrlen+newlen+1);
+        newsh = s_malloc_usable(hdrlen+newlen+1, &usable);
         if (newsh == NULL) return NULL;
         memcpy((char*)newsh+hdrlen, s, len+1);
         s_free(sh);
@@ -249,7 +268,10 @@ sds sdsMakeRoomFor(sds s, size_t addlen) {
         s[-1] = type;
         sdssetlen(s, len);
     }
-    sdssetalloc(s, newlen);
+    usable = usable-hdrlen-1;
+    if (usable > sdsTypeMaxSize(type))
+        usable = sdsTypeMaxSize(type);
+    sdssetalloc(s, usable);
     return s;
 }
 
