@@ -148,10 +148,10 @@ typedef struct quicklistEntry {
     ((node)->encoding == QUICKLIST_NODE_ENCODING_LZF)
 
 /* Prototypes */
-quicklist *quicklistCreate(void);
-quicklist *quicklistNew(int fill, int compress);
-void quicklistSetCompressDepth(quicklist *quicklist, int depth);
-void quicklistSetFill(quicklist *quicklist, int fill);
+quicklist *quicklistCreate(void);  // 创建quicklist 
+quicklist *quicklistNew(int fill, int compress);  // 用一些指定参数创建一个新的quicklist
+void quicklistSetCompressDepth(quicklist *quicklist, int depth);  // 设置压缩深度 
+void quicklistSetFill(quicklist *quicklist, int fill); // 
 void quicklistSetOptions(quicklist *quicklist, int fill, int depth);
 void quicklistRelease(quicklist *quicklist);
 int quicklistPushHead(quicklist *quicklist, void *value, const size_t sz);

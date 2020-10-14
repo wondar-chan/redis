@@ -508,7 +508,8 @@ int performEvictions(void) {
     if (!isSafeToPerformEvictions()) return EVICT_OK;
 
     int keys_freed = 0;
-    size_t mem_reported, mem_tofree, mem_freed;
+    size_t mem_reported, mem_tofree;
+    long long mem_freed; /* May be negative */
     mstime_t latency, eviction_latency;
     long long delta;
     int slaves = listLength(server.slaves);
@@ -529,7 +530,7 @@ int performEvictions(void) {
     monotime evictionTimer;
     elapsedStart(&evictionTimer);
 
-    while (mem_freed < mem_tofree) {
+    while (mem_freed < (long long)mem_tofree) {
         int j, k, i;
         static unsigned int next_db = 0;
         sds bestkey = NULL;

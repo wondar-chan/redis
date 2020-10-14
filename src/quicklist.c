@@ -135,7 +135,7 @@ void quicklistSetOptions(quicklist *quicklist, int fill, int depth) {
     quicklistSetCompressDepth(quicklist, depth);
 }
 
-/* Create a new quicklist with some default parameters. */
+/* 用一些指定参数创建一个新的quicklist */
 quicklist *quicklistNew(int fill, int compress) {
     quicklist *quicklist = quicklistCreate();
     quicklistSetOptions(quicklist, fill, compress);
@@ -181,9 +181,8 @@ void quicklistRelease(quicklist *quicklist) {
     zfree(quicklist);
 }
 
-/* Compress the ziplist in 'node' and update encoding details.
- * Returns 1 if ziplist compressed successfully.
- * Returns 0 if compression failed or if ziplist too small to compress. */
+/* 压缩ziplist，并且更新节点中的编码信息 
+ * 压缩成功返回1，压缩失败或者ziplist太小不压缩返回0 */
 REDIS_STATIC int __quicklistCompressNode(quicklistNode *node) {
 #ifdef REDIS_TEST
     node->attempted_compress = 1;
@@ -843,10 +842,8 @@ REDIS_STATIC quicklistNode *_quicklistSplitNode(quicklistNode *node, int offset,
     return new_node;
 }
 
-/* Insert a new entry before or after existing entry 'entry'.
- *
- * If after==1, the new value is inserted after 'entry', otherwise
- * the new value is inserted before 'entry'. */
+/* 在一个已经存在的entry前面或者后面插入一个新的entry 
+ * 如果after==1表示插入到后面，否则是插入到前面  */
 REDIS_STATIC void _quicklistInsert(quicklist *quicklist, quicklistEntry *entry,
                                    void *value, const size_t sz, int after) {
     int full = 0, at_tail = 0, at_head = 0, full_next = 0, full_prev = 0;
@@ -855,7 +852,7 @@ REDIS_STATIC void _quicklistInsert(quicklist *quicklist, quicklistEntry *entry,
     quicklistNode *new_node = NULL;
 
     if (!node) {
-        /* we have no reference node, so let's create only node in the list */
+        /* 如果entry中未填node，则重新创建一个node并插入到quicklist中 */
         D("No node given!");
         new_node = quicklistCreateNode();
         new_node->zl = ziplistPush(ziplistNew(), value, sz, ZIPLIST_HEAD);
