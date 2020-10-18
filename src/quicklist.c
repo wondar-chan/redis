@@ -28,6 +28,10 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
+/*****************************************************************************
+ * quicklist具体介绍见博文 https://xindoo.blog.csdn.net/article/details/109150975
+ * ***************************************************************************/
+
 #include <string.h> /* for memcpy */
 #include "quicklist.h"
 #include "zmalloc.h"
@@ -96,7 +100,7 @@ void _quicklistBookmarkDelete(quicklist *ql, quicklistBookmark *bm);
 #endif
 
 /* 创建一个新的quicklist.
- * Free with quicklistRelease(). */
+ * 使用quicklistRelease()释放quicklist. */
 quicklist *quicklistCreate(void) {
     struct quicklist *quicklist;
 
@@ -425,6 +429,7 @@ _quicklistNodeSizeMeetsOptimizationRequirement(const size_t sz,
 
 #define sizeMeetsSafetyLimit(sz) ((sz) <= SIZE_SAFETY_LIMIT)
 
+// 确定当前节点是否允许插入新数据 
 REDIS_STATIC int _quicklistNodeAllowInsert(const quicklistNode *node,
                                            const int fill, const size_t sz) {
     if (unlikely(!node))
@@ -481,18 +486,17 @@ REDIS_STATIC int _quicklistNodeAllowMerge(const quicklistNode *a,
         (node)->sz = ziplistBlobLen((node)->zl);                               \
     } while (0)
 
-/* Add new entry to head node of quicklist.
- *
- * Returns 0 if used existing head.
- * Returns 1 if new head created. */
+/* 在quicklist的头部插入一条数据  
+ * 如果在已存在节点插入，返回0
+ * 如果是在新的头结点插入，返回1 */
 int quicklistPushHead(quicklist *quicklist, void *value, size_t sz) {
     quicklistNode *orig_head = quicklist->head;
     if (likely(
             _quicklistNodeAllowInsert(quicklist->head, quicklist->fill, sz))) {
         quicklist->head->zl =
-            ziplistPush(quicklist->head->zl, value, sz, ZIPLIST_HEAD);
+            ziplistPush(quicklist->head->zl, value, sz, ZIPLIST_HEAD);  // 在头结点对应的ziplist中插入 
         quicklistNodeUpdateSz(quicklist->head);
-    } else {
+    } else { // 否则新建一个头结点，然后插入数据 
         quicklistNode *node = quicklistCreateNode();
         node->zl = ziplistPush(ziplistNew(), value, sz, ZIPLIST_HEAD);
 
@@ -504,10 +508,9 @@ int quicklistPushHead(quicklist *quicklist, void *value, size_t sz) {
     return (orig_head != quicklist->head);
 }
 
-/* Add new entry to tail node of quicklist.
- *
- * Returns 0 if used existing tail.
- * Returns 1 if new tail created. */
+/* 在quicklist的尾部插入一条数据  
+ * 如果在已存在节点插入，返回0
+ * 如果是在新的头结点插入，返回1 */
 int quicklistPushTail(quicklist *quicklist, void *value, size_t sz) {
     quicklistNode *orig_tail = quicklist->tail;
     if (likely(
@@ -645,7 +648,7 @@ REDIS_STATIC int quicklistDelIndex(quicklist *quicklist, quicklistNode *node,
 }
 
 /* Delete one element represented by 'entry'
- *
+ * 删除某个entry，entry包含了删除的数据的足够信息  
  * 'entry' stores enough metadata to delete the proper position in
  * the correct ziplist in the correct quicklist node. */
 void quicklistDelEntry(quicklistIter *iter, quicklistEntry *entry) {
@@ -862,7 +865,7 @@ REDIS_STATIC void _quicklistInsert(quicklist *quicklist, quicklistEntry *entry,
         return;
     }
 
-    /* Populate accounting flags for easier boolean checks later */
+    /* 检查要插入的节点是否是满的 */
     if (!_quicklistNodeAllowInsert(node, fill, sz)) {
         D("Current node is full with count %d with requested fill %lu",
           node->count, fill);
@@ -887,8 +890,8 @@ REDIS_STATIC void _quicklistInsert(quicklist *quicklist, quicklistEntry *entry,
         }
     }
 
-    /* Now determine where and how to insert the new element */
-    if (!full && after) {
+    /* 不确定把新元素插到哪 */
+    if (!full && after) { // 如果当前节点不满，就直接插入 
         D("Not full, inserting after current position.");
         quicklistDecompressNodeForUse(node);
         unsigned char *next = ziplistNext(node->zl, entry->zi);
@@ -908,8 +911,7 @@ REDIS_STATIC void _quicklistInsert(quicklist *quicklist, quicklistEntry *entry,
         quicklistNodeUpdateSz(node);
         quicklistRecompressOnly(quicklist, node);
     } else if (full && at_tail && node->next && !full_next && after) {
-        /* If we are: at tail, next has free space, and inserting after:
-         *   - insert entry at head of next node. */
+        /* 如果当前节点是满的，要插入的位置是当前节点的尾部，且后一个节点有空间，那就插到后一个节点的头部。*/
         D("Full and tail, but next isn't full; inserting next node head");
         new_node = node->next;
         quicklistDecompressNodeForUse(new_node);
@@ -918,8 +920,7 @@ REDIS_STATIC void _quicklistInsert(quicklist *quicklist, quicklistEntry *entry,
         quicklistNodeUpdateSz(new_node);
         quicklistRecompressOnly(quicklist, new_node);
     } else if (full && at_head && node->prev && !full_prev && !after) {
-        /* If we are: at head, previous has free space, and inserting before:
-         *   - insert entry at tail of previous node. */
+        /* 如果当前节点是满的，要插入的位置是当前节点的头部，且前一个节点有空间，那就插到前一个节点的尾部。  */
         D("Full and head, but prev isn't full, inserting prev node tail");
         new_node = node->prev;
         quicklistDecompressNodeForUse(new_node);
@@ -929,8 +930,7 @@ REDIS_STATIC void _quicklistInsert(quicklist *quicklist, quicklistEntry *entry,
         quicklistRecompressOnly(quicklist, new_node);
     } else if (full && ((at_tail && node->next && full_next && after) ||
                         (at_head && node->prev && full_prev && !after))) {
-        /* If we are: full, and our prev/next is full, then:
-         *   - create new node and attach to quicklist */
+        /* 如果当前节点是满的，前后节点也都是满的，那就创建一个新的节点插进去 */
         D("\tprovisioning new node...");
         new_node = quicklistCreateNode();
         new_node->zl = ziplistPush(ziplistNew(), value, sz, ZIPLIST_HEAD);
@@ -938,8 +938,7 @@ REDIS_STATIC void _quicklistInsert(quicklist *quicklist, quicklistEntry *entry,
         quicklistNodeUpdateSz(new_node);
         __quicklistInsertNode(quicklist, node, new_node, after);
     } else if (full) {
-        /* else, node is full we need to split it. */
-        /* covers both after and !after cases */
+        /* 否则，当前节点是满的，我们需要把它分裂成两个新节点，一般用于插入到当前节点ziplist中间某个位置时 */
         D("\tsplitting node...");
         quicklistDecompressNodeForUse(node);
         new_node = _quicklistSplitNode(node, entry->offset, after);
@@ -1415,7 +1414,7 @@ int quicklistPop(quicklist *quicklist, int where, unsigned char **data,
     return ret;
 }
 
-/* Wrapper to allow argument-based switching between HEAD/TAIL pop */
+/* 在quicklist的头部或者尾部插入一条数据 */
 void quicklistPush(quicklist *quicklist, void *value, const size_t sz,
                    int where) {
     if (where == QUICKLIST_HEAD) {

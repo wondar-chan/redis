@@ -49,7 +49,7 @@ typedef struct quicklistNode {
     unsigned char *zl;           /* quicklist节点对应的ziplist */
     unsigned int sz;             /* ziplist的字节数 */
     unsigned int count : 16;     /* ziplist的item数*/
-    unsigned int encoding : 2;   /* RAW==1 or LZF==2 */
+    unsigned int encoding : 2;   /* 数据类型，RAW==1 or LZF==2 */
     unsigned int container : 2;  /* NONE==1 or ZIPLIST==2 */
     unsigned int recompress : 1; /* 这个节点以前压缩过吗？ */
     unsigned int attempted_compress : 1; /* node can't compress; too small */
@@ -93,22 +93,19 @@ typedef struct quicklistBookmark {
 #   error unknown arch bits count
 #endif
 
-/* quicklist is a 40 byte struct (on 64-bit systems) describing a quicklist.
- * 'count' is the number of total entries.
- * 'len' is the number of quicklist nodes.
- * 'compress' is: 0 if compression disabled, otherwise it's the number
- *                of quicklistNodes to leave uncompressed at ends of quicklist.
- * 'fill' is the user-requested (or default) fill factor.
- * 'bookmakrs are an optional feature that is used by realloc this struct,
- *      so that they don't consume memory when not used. */
+/* quicklist是一个40字节的结构体(在64位系统中)，具体字段如下： 
+ * count: quicklist中所有数据项的个数
+ * len：quicklist中的节点数  
+ * compress: quicklist的压缩深度，0表示不压缩，否则就表示从两端开始有多少个节点不压缩
+ * bookmarks是一个可选字段，用来quicklist重新分配内存空间时使用，不使用时不占用空间 */
 typedef struct quicklist {
-    quicklistNode *head;
-    quicklistNode *tail;
+    quicklistNode *head;        /* 头结点 */
+    quicklistNode *tail;        /* 尾结点 */
     unsigned long count;        /* 在所有的ziplist中的entry总数 */
     unsigned long len;          /* quicklist节点总数 */
-    int fill : QL_FILL_BITS;              /* fill factor for individual nodes */
-    unsigned int compress : QL_COMP_BITS; /* depth of end nodes not to compress;0=off */
-    unsigned int bookmark_count: QL_BM_BITS;  
+    int fill : QL_FILL_BITS;              /* 16位，每个节点的最大容量*/
+    unsigned int compress : QL_COMP_BITS; /* 16位，quicklist的压缩深度，0表示所有节点都不压缩，否则就表示从两端开始有多少个节点不压缩 */
+    unsigned int bookmark_count: QL_BM_BITS;  /*4位，bookmarks数组的大小，bookmarks是一个可选字段，用来quicklist重新分配内存空间时使用，不使用时不占用空间*/
     quicklistBookmark bookmarks[];
 } quicklist;
 
@@ -151,45 +148,45 @@ typedef struct quicklistEntry {
 quicklist *quicklistCreate(void);  // 创建quicklist 
 quicklist *quicklistNew(int fill, int compress);  // 用一些指定参数创建一个新的quicklist
 void quicklistSetCompressDepth(quicklist *quicklist, int depth);  // 设置压缩深度 
-void quicklistSetFill(quicklist *quicklist, int fill); // 
-void quicklistSetOptions(quicklist *quicklist, int fill, int depth);
-void quicklistRelease(quicklist *quicklist);
-int quicklistPushHead(quicklist *quicklist, void *value, const size_t sz);
-int quicklistPushTail(quicklist *quicklist, void *value, const size_t sz);
-void quicklistPush(quicklist *quicklist, void *value, const size_t sz,
-                   int where);
-void quicklistAppendZiplist(quicklist *quicklist, unsigned char *zl);
-quicklist *quicklistAppendValuesFromZiplist(quicklist *quicklist,
-                                            unsigned char *zl);
+void quicklistSetFill(quicklist *quicklist, int fill); // 设置容量上限 
+void quicklistSetOptions(quicklist *quicklist, int fill, int depth); 
+void quicklistRelease(quicklist *quicklist); // 释放quicklist
+int quicklistPushHead(quicklist *quicklist, void *value, const size_t sz);  // 头部插入
+int quicklistPushTail(quicklist *quicklist, void *value, const size_t sz);  // 尾部插入
+void quicklistPush(quicklist *quicklist, void *value, const size_t sz, 
+                   int where); // 指定头部或者尾部插入  
+void quicklistAppendZiplist(quicklist *quicklist, unsigned char *zl); // 把一个ziplist放到quicklist中
+quicklist *quicklistAppendValuesFromZiplist(quicklist *quicklist,   
+                                            unsigned char *zl); // 把ziplist中的所有数据放到quicklist中
 quicklist *quicklistCreateFromZiplist(int fill, int compress,
-                                      unsigned char *zl);
+                                      unsigned char *zl);  // 从ziplist生成一个quicklist  
 void quicklistInsertAfter(quicklist *quicklist, quicklistEntry *node,
-                          void *value, const size_t sz);
+                          void *value, const size_t sz);  
 void quicklistInsertBefore(quicklist *quicklist, quicklistEntry *node,
                            void *value, const size_t sz);
-void quicklistDelEntry(quicklistIter *iter, quicklistEntry *entry);
+void quicklistDelEntry(quicklistIter *iter, quicklistEntry *entry); // 数据删除 
 int quicklistReplaceAtIndex(quicklist *quicklist, long index, void *data,
-                            int sz);
-int quicklistDelRange(quicklist *quicklist, const long start, const long stop);
-quicklistIter *quicklistGetIterator(const quicklist *quicklist, int direction);
+                            int sz);   // 数据替换 
+int quicklistDelRange(quicklist *quicklist, const long start, const long stop);  // 范围删除  
+quicklistIter *quicklistGetIterator(const quicklist *quicklist, int direction);  // 迭代器 
 quicklistIter *quicklistGetIteratorAtIdx(const quicklist *quicklist,
-                                         int direction, const long long idx);
-int quicklistNext(quicklistIter *iter, quicklistEntry *node);
-void quicklistReleaseIterator(quicklistIter *iter);
-quicklist *quicklistDup(quicklist *orig);
+                                         int direction, const long long idx);  // 从指定位置开始的迭代器  
+int quicklistNext(quicklistIter *iter, quicklistEntry *node);   // 迭代器下一个位置  
+void quicklistReleaseIterator(quicklistIter *iter);  // 释放迭代器  
+quicklist *quicklistDup(quicklist *orig);  // 去重  
 int quicklistIndex(const quicklist *quicklist, const long long index,
-                   quicklistEntry *entry);
+                   quicklistEntry *entry);  // 找到entry的下标索引 
 void quicklistRewind(quicklist *quicklist, quicklistIter *li);
 void quicklistRewindTail(quicklist *quicklist, quicklistIter *li);
-void quicklistRotate(quicklist *quicklist);
+void quicklistRotate(quicklist *quicklist);  // 选择quicklist  
 int quicklistPopCustom(quicklist *quicklist, int where, unsigned char **data,
                        unsigned int *sz, long long *sval,
-                       void *(*saver)(unsigned char *data, unsigned int sz));
-int quicklistPop(quicklist *quicklist, int where, unsigned char **data,
-                 unsigned int *sz, long long *slong);
+                       void *(*saver)(unsigned char *data, unsigned int sz)); 
+int quicklistPop(quicklist *quicklist, int where, unsigned char **data, 
+                 unsigned int *sz, long long *slong); // 数据pop 
 unsigned long quicklistCount(const quicklist *ql);
-int quicklistCompare(unsigned char *p1, unsigned char *p2, int p2_len);
-size_t quicklistGetLzf(const quicklistNode *node, void **data);
+int quicklistCompare(unsigned char *p1, unsigned char *p2, int p2_len); // 比较大小  
+size_t quicklistGetLzf(const quicklistNode *node, void **data);  // LZF节点  
 
 /* bookmarks */
 int quicklistBookmarkCreate(quicklist **ql_ref, const char *name, quicklistNode *node);
