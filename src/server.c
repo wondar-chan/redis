@@ -1981,16 +1981,17 @@ int serverCron(struct aeEventLoop *eventLoop, long long id, void *clientData) {
     }
 
     // 每5秒输出一下redis db的统计信息，比如大小，使用量，过期的key数量
-    run_with_period(5000) {
-        for (j = 0; j < server.dbnum; j++) {
-            long long size, used, vkeys;
+    if (server.verbosity <= LL_VERBOSE) {
+        run_with_period(5000) {
+            for (j = 0; j < server.dbnum; j++) {
+                long long size, used, vkeys;
 
-            size = dictSlots(server.db[j].dict);
-            used = dictSize(server.db[j].dict);
-            vkeys = dictSize(server.db[j].expires);
-            if (used || vkeys) {
-                serverLog(LL_VERBOSE,"DB %d: %lld keys (%lld volatile) in %lld slots HT.",j,used,vkeys,size);
-                /* dictPrintStats(server.dict); */
+                size = dictSlots(server.db[j].dict);
+                used = dictSize(server.db[j].dict);
+                vkeys = dictSize(server.db[j].expires);
+                if (used || vkeys) {
+                    serverLog(LL_VERBOSE,"DB %d: %lld keys (%lld volatile) in %lld slots HT.",j,used,vkeys,size);
+                }
             }
         }
     }
@@ -2814,59 +2815,37 @@ void checkTcpBacklogSettings(void) {
  * one of the IPv4 or IPv6 protocols. */
 int listenToPort(int port, int *fds, int *count) {
     int j;
+    char **bindaddr = server.bindaddr;
+    int bindaddr_count = server.bindaddr_count;
+    char *default_bindaddr[2] = {"*", "-::*"};
 
-    /* Force binding of 0.0.0.0 if no bind address is specified, always
-     * entering the loop if j == 0. */
-    if (server.bindaddr_count == 0) server.bindaddr[0] = NULL;
-    for (j = 0; j < server.bindaddr_count || j == 0; j++) {
-        if (server.bindaddr[j] == NULL) {
-            int unsupported = 0;
-            /* Bind * for both IPv6 and IPv4, we enter here only if
-             * server.bindaddr_count == 0. */
-            fds[*count] = anetTcp6Server(server.neterr,port,NULL,
-                server.tcp_backlog);
-            if (fds[*count] != ANET_ERR) {
-                anetNonBlock(NULL,fds[*count]);
-                (*count)++;
-            } else if (errno == EAFNOSUPPORT) {
-                unsupported++;
-                serverLog(LL_WARNING,"Not listening to IPv6: unsupported");
-            }
+    /* Force binding of 0.0.0.0 if no bind address is specified. */
+    if (server.bindaddr_count == 0) {
+        bindaddr_count = 2;
+        bindaddr = default_bindaddr;
+    }
 
-            if (*count == 1 || unsupported) {
-                /* Bind the IPv4 address as well. */
-                fds[*count] = anetTcpServer(server.neterr,port,NULL,
-                    server.tcp_backlog);
-                if (fds[*count] != ANET_ERR) {
-                    anetNonBlock(NULL,fds[*count]);
-                    (*count)++;
-                } else if (errno == EAFNOSUPPORT) {
-                    unsupported++;
-                    serverLog(LL_WARNING,"Not listening to IPv4: unsupported");
-                }
-            }
-            /* Exit the loop if we were able to bind * on IPv4 and IPv6,
-             * otherwise fds[*count] will be ANET_ERR and we'll print an
-             * error and return to the caller with an error. */
-            if (*count + unsupported == 2) break;
-        } else if (strchr(server.bindaddr[j],':')) {
+    for (j = 0; j < bindaddr_count; j++) {
+        char* addr = bindaddr[j];
+        int optional = *addr == '-';
+        if (optional) addr++;
+        if (strchr(addr,':')) {
             /* Bind IPv6 address. */
-            fds[*count] = anetTcp6Server(server.neterr,port,server.bindaddr[j],
-                server.tcp_backlog);
+            fds[*count] = anetTcp6Server(server.neterr,port,addr,server.tcp_backlog);
         } else {
             /* Bind IPv4 address. */
-            fds[*count] = anetTcpServer(server.neterr,port,server.bindaddr[j],
-                server.tcp_backlog);
+            fds[*count] = anetTcpServer(server.neterr,port,addr,server.tcp_backlog);
         }
         if (fds[*count] == ANET_ERR) {
             serverLog(LL_WARNING,
                 "Could not create server TCP listening socket %s:%d: %s",
-                server.bindaddr[j] ? server.bindaddr[j] : "*",
-                port, server.neterr);
-                if (errno == ENOPROTOOPT     || errno == EPROTONOSUPPORT ||
-                    errno == ESOCKTNOSUPPORT || errno == EPFNOSUPPORT ||
-                    errno == EAFNOSUPPORT    || errno == EADDRNOTAVAIL)
-                    continue;
+                addr, port, server.neterr);
+            if (errno == EADDRNOTAVAIL && optional)
+                continue;
+            if (errno == ENOPROTOOPT     || errno == EPROTONOSUPPORT ||
+                errno == ESOCKTNOSUPPORT || errno == EPFNOSUPPORT ||
+                errno == EAFNOSUPPORT)
+                continue;
             return C_ERR;
         }
         anetNonBlock(NULL,fds[*count]);
@@ -4904,7 +4883,7 @@ void linuxMemoryWarnings(void) {
     if (linuxOvercommitMemoryValue() == 0) {
         serverLog(LL_WARNING,"WARNING overcommit_memory is set to 0! Background save may fail under low memory condition. To fix this issue add 'vm.overcommit_memory = 1' to /etc/sysctl.conf and then reboot or run the command 'sysctl vm.overcommit_memory=1' for this to take effect.");
     }
-    if (THPIsEnabled()) {
+    if (THPIsEnabled() && THPDisable()) {
         serverLog(LL_WARNING,"WARNING you have Transparent Huge Pages (THP) support enabled in your kernel. This will create latency and memory usage issues with Redis. To fix this issue run the command 'echo madvise > /sys/kernel/mm/transparent_hugepage/enabled' as root, and add it to your /etc/rc.local in order to retain the setting after a reboot. Redis must be restarted after THP is disabled (set to 'madvise' or 'never').");
     }
 }
