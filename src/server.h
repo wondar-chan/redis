@@ -1142,6 +1142,7 @@ struct redisServer {
     /* RDB / AOF loading information */
     volatile sig_atomic_t loading; /* We are loading data from disk if true */
     off_t loading_total_bytes;
+    off_t loading_rdb_used_mem;
     off_t loading_loaded_bytes;
     time_t loading_start_time;
     off_t loading_process_events_interval_bytes;
@@ -1843,6 +1844,8 @@ robj *createZsetZiplistObject(void);
 robj *createStreamObject(void);
 robj *createModuleObject(moduleType *mt, void *value);
 int getLongFromObjectOrReply(client *c, robj *o, long *target, const char *msg);
+int getPositiveLongFromObjectOrReply(client *c, robj *o, long *target, const char *msg);
+int getRangeLongFromObjectOrReply(client *c, robj *o, long min, long max, long *target, const char *msg);
 int checkType(client *c, robj *o, int type);
 int getLongLongFromObjectOrReply(client *c, robj *o, long long *target, const char *msg);
 int getDoubleFromObjectOrReply(client *c, robj *o, double *target, const char *msg);
@@ -2499,6 +2502,7 @@ void xtrimCommand(client *c);
 void lolwutCommand(client *c);
 void aclCommand(client *c);
 void stralgoCommand(client *c);
+void resetCommand(client *c);
 
 #if defined(__GNUC__)
 void *calloc(size_t count, size_t size) __attribute__ ((deprecated));

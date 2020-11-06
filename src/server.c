@@ -1036,7 +1036,11 @@ struct redisCommand redisCommandTable[] = {
 
     {"stralgo",stralgoCommand,-2,
      "read-only @string",
-     0,lcsGetKeys,0,0,0,0,0,0}
+     0,lcsGetKeys,0,0,0,0,0,0},
+
+    {"reset",resetCommand,-1,
+     "no-script ok-stale ok-loading fast @connection",
+     0,NULL,0,0,0,0,0,0}
 };
 
 /*============================ Utility functions ============================ */
@@ -2066,6 +2070,9 @@ int serverCron(struct aeEventLoop *eventLoop, long long id, void *clientData) {
             }
         }
     }
+    /* Just for the sake of defensive programming, to avoid forgeting to
+     * call this function when need. */
+    updateDictResizePolicy();
 
 
     /* AOF postponed flush: Try at every cron cycle if the slow fsync
@@ -2472,6 +2479,7 @@ void initServerConfig(void) {
     server.client_max_querybuf_len = PROTO_MAX_QUERYBUF_LEN;
     server.saveparams = NULL;
     server.loading = 0;
+    server.loading_rdb_used_mem = 0;
     server.logfile = zstrdup(CONFIG_DEFAULT_LOGFILE);
     server.aof_state = AOF_OFF;
     server.aof_rewrite_base_size = 0;
@@ -3766,7 +3774,8 @@ int processCommand(client *c) {
          * set. */
         if (c->flags & CLIENT_MULTI &&
             c->cmd->proc != execCommand &&
-            c->cmd->proc != discardCommand) {
+            c->cmd->proc != discardCommand &&
+            c->cmd->proc != resetCommand) {
             reject_cmd_on_oom = 1;
         }
 
@@ -3832,10 +3841,11 @@ int processCommand(client *c) {
         c->cmd->proc != subscribeCommand &&
         c->cmd->proc != unsubscribeCommand &&
         c->cmd->proc != psubscribeCommand &&
-        c->cmd->proc != punsubscribeCommand) {
+        c->cmd->proc != punsubscribeCommand &&
+        c->cmd->proc != resetCommand) {
         rejectCommandFormat(c,
             "Can't execute '%s': only (P)SUBSCRIBE / "
-            "(P)UNSUBSCRIBE / PING / QUIT are allowed in this context",
+            "(P)UNSUBSCRIBE / PING / QUIT / RESET are allowed in this context",
             c->cmd->name);
         return C_OK;
     }
@@ -3886,7 +3896,8 @@ int processCommand(client *c) {
     /* 做完准备工作，最后执行命令 */
     if (c->flags & CLIENT_MULTI &&
         c->cmd->proc != execCommand && c->cmd->proc != discardCommand &&
-        c->cmd->proc != multiCommand && c->cmd->proc != watchCommand)
+        c->cmd->proc != multiCommand && c->cmd->proc != watchCommand &&
+        c->cmd->proc != resetCommand)
     {
         queueMultiCommand(c);
         addReply(c,shared.queued);
@@ -4322,12 +4333,16 @@ sds genRedisInfoString(const char *section) {
         info = sdscatprintf(info,
             "# Clients\r\n"
             "connected_clients:%lu\r\n"
+            "cluster_connections:%lu\r\n"
+            "maxclients:%u\r\n"
             "client_recent_max_input_buffer:%zu\r\n"
             "client_recent_max_output_buffer:%zu\r\n"
             "blocked_clients:%d\r\n"
             "tracking_clients:%d\r\n"
             "clients_in_timeout_table:%llu\r\n",
             listLength(server.clients)-listLength(server.slaves),
+            getClusterConnectionsCount(),
+            server.maxclients,
             maxin, maxout,
             server.blocked_clients,
             server.tracking_clients,
@@ -4517,13 +4532,20 @@ sds genRedisInfoString(const char *section) {
         }
 
         if (server.loading) {
-            double perc;
+            double perc = 0;
             time_t eta, elapsed;
-            off_t remaining_bytes = server.loading_total_bytes-
-                                    server.loading_loaded_bytes;
+            off_t remaining_bytes = 1;
 
-            perc = ((double)server.loading_loaded_bytes /
-                   (server.loading_total_bytes+1)) * 100;
+            if (server.loading_total_bytes) {
+                perc = ((double)server.loading_loaded_bytes / server.loading_total_bytes) * 100;
+                remaining_bytes = server.loading_total_bytes - server.loading_loaded_bytes;
+            } else if(server.loading_rdb_used_mem) {
+                perc = ((double)server.loading_loaded_bytes / server.loading_rdb_used_mem) * 100;
+                remaining_bytes = server.loading_rdb_used_mem - server.loading_loaded_bytes;
+                /* used mem is only a (bad) estimation of the rdb file size, avoid going over 100% */
+                if (perc > 99.99) perc = 99.99;
+                if (remaining_bytes < 1) remaining_bytes = 1;
+            }
 
             elapsed = time(NULL)-server.loading_start_time;
             if (elapsed == 0) {
@@ -4536,11 +4558,13 @@ sds genRedisInfoString(const char *section) {
             info = sdscatprintf(info,
                 "loading_start_time:%jd\r\n"
                 "loading_total_bytes:%llu\r\n"
+                "loading_rdb_used_mem:%llu\r\n"
                 "loading_loaded_bytes:%llu\r\n"
                 "loading_loaded_perc:%.2f\r\n"
                 "loading_eta_seconds:%jd\r\n",
                 (intmax_t) server.loading_start_time,
                 (unsigned long long) server.loading_total_bytes,
+                (unsigned long long) server.loading_rdb_used_mem,
                 (unsigned long long) server.loading_loaded_bytes,
                 perc,
                 (intmax_t)eta
@@ -4665,11 +4689,20 @@ sds genRedisInfoString(const char *section) {
             );
 
             if (server.repl_state == REPL_STATE_TRANSFER) {
+                double perc = 0;
+                if (server.repl_transfer_size) {
+                    perc = ((double)server.repl_transfer_read / server.repl_transfer_size) * 100;
+                }
                 info = sdscatprintf(info,
+                    "master_sync_total_bytes:%lld\r\n"
+                    "master_sync_read_bytes:%lld\r\n"
                     "master_sync_left_bytes:%lld\r\n"
-                    "master_sync_last_io_seconds_ago:%d\r\n"
-                    , (long long)
-                        (server.repl_transfer_size - server.repl_transfer_read),
+                    "master_sync_perc:%.2f\r\n"
+                    "master_sync_last_io_seconds_ago:%d\r\n",
+                    (long long) server.repl_transfer_size,
+                    (long long) server.repl_transfer_read,
+                    (long long) (server.repl_transfer_size - server.repl_transfer_read),
+                    perc,
                     (int)(server.unixtime-server.repl_transfer_lastio)
                 );
             }
@@ -5034,6 +5067,7 @@ void setupSignalHandlers(void) {
         sigaction(SIGBUS, &act, NULL);
         sigaction(SIGFPE, &act, NULL);
         sigaction(SIGILL, &act, NULL);
+        sigaction(SIGABRT, &act, NULL);
     }
     return;
 }
@@ -5047,6 +5081,7 @@ void removeSignalHandlers(void) {
     sigaction(SIGBUS, &act, NULL);
     sigaction(SIGFPE, &act, NULL);
     sigaction(SIGILL, &act, NULL);
+    sigaction(SIGABRT, &act, NULL);
 }
 
 /* This is the signal handler for children process. It is currently useful
@@ -5100,7 +5135,6 @@ int redisFork(int purpose) {
         if (childpid == -1) {
             return -1;
         }
-        updateDictResizePolicy();
     }
     return childpid;
 }

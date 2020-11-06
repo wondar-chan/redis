@@ -1015,10 +1015,10 @@ ssize_t rdbSaveObject(rio *rdb, robj *o, robj *key) {
          * to call the right module during loading. */
         int retval = rdbSaveLen(rdb,mt->id);
         if (retval == -1) return -1;
+        moduleInitIOContext(io,mt,rdb,key);
         io.bytes += retval;
 
         /* Then write the module-specific representation + EOF marker. */
-        moduleInitIOContext(io,mt,rdb,key);
         mt->rdb_save(&io,mv->value);
         retval = rdbSaveLen(rdb,RDB_MODULE_OPCODE_EOF);
         if (retval == -1)
@@ -1146,6 +1146,7 @@ ssize_t rdbSaveSingleModuleAux(rio *rdb, int when, moduleType *mt) {
     RedisModuleIO io;
     int retval = rdbSaveType(rdb, RDB_OPCODE_MODULE_AUX);
     if (retval == -1) return -1;
+    moduleInitIOContext(io,mt,rdb,NULL);
     io.bytes += retval;
 
     /* Write the "module" identifier as prefix, so that we'll be able
@@ -1165,7 +1166,6 @@ ssize_t rdbSaveSingleModuleAux(rio *rdb, int when, moduleType *mt) {
     io.bytes += retval;
 
     /* Then write the module-specific representation + EOF marker. */
-    moduleInitIOContext(io,mt,rdb,NULL);
     mt->aux_save(&io,when);
     retval = rdbSaveLen(rdb,RDB_MODULE_OPCODE_EOF);
     if (retval == -1)
@@ -1413,6 +1413,7 @@ int rdbSaveBackground(char *filename, rdbSaveInfo *rsi) {
         server.rdb_save_time_start = time(NULL);
         server.rdb_child_pid = childpid;
         server.rdb_child_type = RDB_CHILD_TYPE_DISK;
+        updateDictResizePolicy();
         return C_OK;
     }
     return C_OK; /* unreached */
@@ -2023,6 +2024,7 @@ void startLoading(size_t size, int rdbflags) {
     server.loading_start_time = time(NULL);
     server.loading_loaded_bytes = 0;
     server.loading_total_bytes = size;
+    server.loading_rdb_used_mem = 0;
     blockingOperationStarts();
 
     /* Fire the loading modules start event. */
@@ -2238,6 +2240,7 @@ int rdbLoadRio(rio *rdb, int rdbflags, rdbSaveInfo *rsi) {
                 long long usedmem = strtoll(auxval->ptr,NULL,10);
                 serverLog(LL_NOTICE,"RDB memory usage when created %.2f Mb",
                     (double) usedmem / (1024*1024));
+                server.loading_rdb_used_mem = usedmem;
             } else if (!strcasecmp(auxkey->ptr,"aof-preamble")) {
                 long long haspreamble = strtoll(auxval->ptr,NULL,10);
                 if (haspreamble) serverLog(LL_NOTICE,"RDB has an AOF tail");
@@ -2620,6 +2623,7 @@ int rdbSaveToSlavesSockets(rdbSaveInfo *rsi) {
             server.rdb_save_time_start = time(NULL);
             server.rdb_child_pid = childpid;
             server.rdb_child_type = RDB_CHILD_TYPE_SOCKET;
+            updateDictResizePolicy();
             close(rdb_pipe_write); /* close write in parent so that it can detect the close on the child. */
             if (aeCreateFileEvent(server.el, server.rdb_pipe_read, AE_READABLE, rdbPipeReadHandler,NULL) == AE_ERR) {
                 serverPanic("Unrecoverable error creating server.rdb_pipe_read file event.");
