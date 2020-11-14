@@ -340,15 +340,16 @@ void listRotateHeadToTail(list *list) {
  * list 'l'. The list 'other' remains empty but otherwise valid. 
  * 把l和o两个list拼接在一起，*/
 void listJoin(list *l, list *o) {
-    if (o->head)
-        o->head->prev = l->tail;
+    if (o->len == 0) return;
+
+    o->head->prev = l->tail;
 
     if (l->tail)
         l->tail->next = o->head;
     else
         l->head = o->head;
 
-    if (o->tail) l->tail = o->tail;
+    l->tail = o->tail;
     l->len += o->len;
 
     /* Setup other as an empty list. */
