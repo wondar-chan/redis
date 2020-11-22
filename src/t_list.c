@@ -190,6 +190,29 @@ void listTypeConvert(robj *subject, int enc) {
     }
 }
 
+/* This is a helper function for the COPY command.
+ * Duplicate a list object, with the guarantee that the returned object
+ * has the same encoding as the original one.
+ *
+ * The resulting object always has refcount set to 1 */
+robj *listTypeDup(robj *o) {
+    robj *lobj;
+
+    serverAssert(o->type == OBJ_LIST);
+
+    switch (o->encoding) {
+        case OBJ_ENCODING_QUICKLIST:
+            lobj = createQuicklistObject();
+            break;
+        default:
+            serverPanic("Wrong encoding.");
+            break;
+    }
+    zfree(lobj->ptr);
+    lobj->ptr = quicklistDup(o->ptr);
+    return lobj;
+}
+
 /*-----------------------------------------------------------------------------
  * List Commands
  *----------------------------------------------------------------------------*/
@@ -907,8 +930,8 @@ void blmoveGenericCommand(client *c, int wherefrom, int whereto, mstime_t timeou
     if (checkType(c,key,OBJ_LIST)) return;
 
     if (key == NULL) {
-        if (c->flags & CLIENT_MULTI) {
-            /* Blocking against an empty list in a multi state
+        if (c->flags & CLIENT_DENY_BLOCKING) {
+            /* Blocking against an empty list when blocking is not allowed
              * returns immediately. */
             addReplyNull(c);
         } else {

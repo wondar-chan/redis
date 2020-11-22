@@ -267,6 +267,9 @@ extern int configOOMScoreAdjValuesDefaults[CONFIG_OOM_COUNT];
 #define CLIENT_PROTOCOL_ERROR (1ULL<<39) /* Protocol error chatting with it. */
 #define CLIENT_CLOSE_AFTER_COMMAND (1ULL<<40) /* Close after executing commands
                                                * and writing entire reply. */
+#define CLIENT_DENY_BLOCKING (1ULL<<41) /* Indicate that the client should not be blocked.
+                                           currently, turned on inside MULTI, Lua, RM_Call,
+                                           and AOF client */
 
 /* Client block type (btype field in client structure)
  * if CLIENT_BLOCKED flag is set. */
@@ -514,6 +517,8 @@ typedef void (*moduleTypeRewriteFunc)(struct RedisModuleIO *io, struct redisObje
 typedef void (*moduleTypeDigestFunc)(struct RedisModuleDigest *digest, void *value);
 typedef size_t (*moduleTypeMemUsageFunc)(const void *value);
 typedef void (*moduleTypeFreeFunc)(void *value);
+typedef size_t (*moduleTypeFreeEffortFunc)(struct redisObject *key, const void *value);
+typedef void (*moduleTypeUnlinkFunc)(struct redisObject *key, void *value);
 
 /* This callback type is called by moduleNotifyUserChanged() every time
  * a user authenticated via the module API is associated with a different
@@ -533,6 +538,8 @@ typedef struct RedisModuleType {
     moduleTypeMemUsageFunc mem_usage;
     moduleTypeDigestFunc digest;
     moduleTypeFreeFunc free;
+    moduleTypeFreeEffortFunc free_effort;
+    moduleTypeUnlinkFunc unlink;
     moduleTypeAuxLoadFunc aux_load;
     moduleTypeAuxSaveFunc aux_save;
     int aux_save_triggers;
@@ -1658,6 +1665,7 @@ int moduleTryServeClientBlockedOnKey(client *c, robj *key);
 void moduleUnblockClient(client *c);
 int moduleClientIsBlockedOnKeys(client *c);
 void moduleNotifyUserChanged(client *c);
+void moduleNotifyKeyUnlink(robj *key, robj *val);
 
 /* Utils */
 long long ustime(void);
@@ -1798,6 +1806,7 @@ void listTypeInsert(listTypeEntry *entry, robj *value, int where);
 int listTypeEqual(listTypeEntry *entry, robj *o);
 void listTypeDelete(listTypeIterator *iter, listTypeEntry *entry);
 void listTypeConvert(robj *subject, int enc);
+robj *listTypeDup(robj *o);
 void unblockClientWaitingData(client *c);
 void popGenericCommand(client *c, int where);
 void listElementsRemoved(client *c, robj *key, int where, robj *o);
@@ -2029,6 +2038,7 @@ unsigned long zslGetRank(zskiplist *zsl, double score, sds o);
 int zsetAdd(robj *zobj, double score, sds ele, int *flags, double *newscore);
 long zsetRank(robj *zobj, sds ele, int reverse);
 int zsetDel(robj *zobj, sds ele);
+robj *zsetDup(robj *o);
 void genericZpopCommand(client *c, robj **keyv, int keyc, int where, int emitkey, robj *countarg);
 sds ziplistGetObject(unsigned char *sptr);
 int zslValueGteMin(double value, zrangespec *spec);
@@ -2107,6 +2117,7 @@ int setTypeRandomElement(robj *setobj, sds *sdsele, int64_t *llele);
 unsigned long setTypeRandomElements(robj *set, unsigned long count, robj *aux_set);
 unsigned long setTypeSize(const robj *subject);
 void setTypeConvert(robj *subject, int enc);
+robj *setTypeDup(robj *o);
 
 /* Hash data type */
 #define HASH_SET_TAKE_FIELD (1<<0)
@@ -2131,6 +2142,7 @@ sds hashTypeCurrentObjectNewSds(hashTypeIterator *hi, int what);
 robj *hashTypeLookupWriteOrCreate(client *c, robj *key);
 robj *hashTypeGetValueObject(robj *o, sds field);
 int hashTypeSet(robj *o, sds field, sds value, int flags);
+robj *hashTypeDup(robj *o);
 
 /* Pub / Sub */
 int pubsubUnsubscribeAllChannels(client *c, int notify);
@@ -2174,6 +2186,7 @@ int objectSetLRUOrLFU(robj *val, long long lfu_freq, long long lru_idle,
                        long long lru_clock, int lru_multiplier);
 #define LOOKUP_NONE 0
 #define LOOKUP_NOTOUCH (1<<0)
+#define LOOKUP_NONOTIFY (1<<1)
 void dbAdd(redisDb *db, robj *key, robj *val);
 int dbAddRDBLoad(redisDb *db, sds key, robj *val);
 void dbOverwrite(redisDb *db, robj *key, robj *val);
@@ -2208,7 +2221,8 @@ int dbAsyncDelete(redisDb *db, robj *key);
 void emptyDbAsync(redisDb *db);
 void slotToKeyFlushAsync(void);
 size_t lazyfreeGetPendingObjectsCount(void);
-void freeObjAsync(robj *o);
+size_t lazyfreeGetFreedObjectsCount(void);
+void freeObjAsync(robj *key, robj *obj);
 
 /* API to get key arguments from commands */
 int *getKeysPrepareResult(getKeysResult *result, int numkeys);
@@ -2337,6 +2351,7 @@ void bgsaveCommand(client *c);
 void bgrewriteaofCommand(client *c);
 void shutdownCommand(client *c);
 void moveCommand(client *c);
+void copyCommand(client *c);
 void renameCommand(client *c);
 void renamenxCommand(client *c);
 void lpushCommand(client *c);

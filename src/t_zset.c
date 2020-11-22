@@ -1539,6 +1539,68 @@ long zsetRank(robj *zobj, sds ele, int reverse) {
     }
 }
 
+/* This is a helper function for the COPY command.
+ * Duplicate a sorted set object, with the guarantee that the returned object
+ * has the same encoding as the original one.
+ *
+ * The resulting object always has refcount set to 1 */
+robj *zsetDup(robj *o) {
+    robj *zobj;
+    zset *zs;
+    zset *new_zs;
+
+    serverAssert(o->type == OBJ_ZSET);
+
+    /* Create a new sorted set object that have the same encoding as the original object's encoding */
+    switch (o->encoding) {
+        case OBJ_ENCODING_ZIPLIST:
+            zobj = createZsetZiplistObject();
+            break;
+        case OBJ_ENCODING_SKIPLIST:
+            zobj = createZsetObject();
+            zs = o->ptr;
+            new_zs = zobj->ptr;
+            dictExpand(new_zs->dict,dictSize(zs->dict));
+            break;
+        default:
+            serverPanic("Wrong encoding.");
+            break;
+    }
+    if (zobj->encoding == OBJ_ENCODING_ZIPLIST) {
+        unsigned char *zl = o->ptr;
+        size_t sz = ziplistBlobLen(zl);
+        unsigned char *new_zl = zmalloc(sz);
+        memcpy(new_zl, zl, sz);
+        zfree(zobj->ptr);
+        zobj->ptr = new_zl;
+    } else if (zobj->encoding == OBJ_ENCODING_SKIPLIST) {
+        zs = o->ptr;
+        new_zs = zobj->ptr;
+        zskiplist *zsl = zs->zsl;
+        zskiplistNode *ln;
+        sds ele;
+        long llen = zsetLength(o);
+
+        /* We copy the skiplist elements from the greatest to the
+         * smallest (that's trivial since the elements are already ordered in
+         * the skiplist): this improves the load process, since the next loaded
+         * element will always be the smaller, so adding to the skiplist
+         * will always immediately stop at the head, making the insertion
+         * O(1) instead of O(log(N)). */
+        ln = zsl->tail;
+        while (llen--) {
+            ele = ln->ele;
+            sds new_ele = sdsdup(ele);
+            zskiplistNode *znode = zslInsert(new_zs->zsl,ln->score,new_ele);
+            dictAdd(new_zs->dict,new_ele,&znode->score);
+            ln = ln->backward;
+        }
+    } else {
+        serverPanic("Unknown sorted set encoding");
+    }
+    return zobj;
+}
+
 /*-----------------------------------------------------------------------------
  * Sorted set commands
  *----------------------------------------------------------------------------*/
@@ -2254,6 +2316,7 @@ static void zdiffAlgorithm1(zsetopsrc *src, long setnum, zset *dstzset, size_t *
             if (sdslen(tmp) > *maxelelen) *maxelelen = sdslen(tmp);
         }
     }
+    zuiClearIterator(&src[0]);
 }
 
 
@@ -2291,7 +2354,7 @@ static void zdiffAlgorithm2(zsetopsrc *src, long setnum, zset *dstzset, size_t *
                 dictAdd(dstzset->dict,tmp,&znode->score);
                 cardinality++;
             } else {
-                tmp = zuiNewSdsFromValue(&zval);
+                tmp = zuiSdsFromValue(&zval);
                 if (zsetRemoveFromSkiplist(dstzset, tmp)) {
                     cardinality--;
                 }
@@ -2301,6 +2364,7 @@ static void zdiffAlgorithm2(zsetopsrc *src, long setnum, zset *dstzset, size_t *
                 * of elements will have no effect. */
             if (cardinality == 0) break;
         }
+        zuiClearIterator(&src[j]);
 
         if (cardinality == 0) break;
     }
@@ -2828,6 +2892,12 @@ void genericZrangebyscoreCommand(client *c, int reverse) {
     /* Ok, lookup the key and get the range */
     if ((zobj = lookupKeyReadOrReply(c,key,shared.emptyarray)) == NULL ||
         checkType(c,zobj,OBJ_ZSET)) return;
+
+    /* For invalid offset, return directly. */
+    if (offset > 0 && offset >= (long)zsetLength(zobj)) {
+        addReply(c,shared.emptyarray);
+        return;
+    }
 
     if (zobj->encoding == OBJ_ENCODING_ZIPLIST) {
         unsigned char *zl = zobj->ptr;
@@ -3549,9 +3619,9 @@ void blockingGenericZpopCommand(client *c, int where) {
         }
     }
 
-    /* If we are inside a MULTI/EXEC and the zset is empty the only thing
+    /* If we are not allowed to block the client and the zset is empty the only thing
      * we can do is treating it as a timeout (even with timeout 0). */
-    if (c->flags & CLIENT_MULTI) {
+    if (c->flags & CLIENT_DENY_BLOCKING) {
         addReplyNullArray(c);
         return;
     }
