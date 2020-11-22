@@ -61,7 +61,7 @@
 
 /*-----------------------------------------------------------------------------
  * Skiplist implementation of the low level API
- * set使用跳表实现，具体可以参考博客 http://zhangtielei.com/posts/blog-redis-skiplist.html 
+ * set使用跳表实现，具体可以参考博客 https://xindoo.blog.csdn.net/article/details/109922390
  *----------------------------------------------------------------------------*/
 
 int zslLexValueGteMin(sds value, zlexrangespec *spec);
@@ -85,7 +85,7 @@ zskiplist *zslCreate(void) {
     zsl = zmalloc(sizeof(*zsl));
     zsl->level = 1;
     zsl->length = 0;
-    zsl->header = zslCreateNode(ZSKIPLIST_MAXLEVEL,0,NULL);
+    zsl->header = zslCreateNode(ZSKIPLIST_MAXLEVEL,0,NULL);  // 创建头节点
     for (j = 0; j < ZSKIPLIST_MAXLEVEL; j++) {
         zsl->header->level[j].forward = NULL;
         zsl->header->level[j].span = 0;
@@ -116,11 +116,7 @@ void zslFree(zskiplist *zsl) {
     zfree(zsl);
 }
 
-/* Returns a random level for the new skiplist node we are going to create.
- * The return value of this function is between 1 and ZSKIPLIST_MAXLEVEL
- * (both inclusive), with a powerlaw-alike distribution where higher
- * levels are less likely to be returned. 
- * 随机生成跳表的层高，最高32层，实现原理就是按概率随机加1，加到不能加，每次有四分之一的可能性+1 */
+/*  随机生成跳表的层高，最高32层，实现原理就是按概率随机加1，加到不能加，每次有四分之一的可能性+1 */
 int zslRandomLevel(void) {
     int level = 1;
     while ((random()&0xFFFF) < (ZSKIPLIST_P * 0xFFFF))
@@ -128,10 +124,7 @@ int zslRandomLevel(void) {
     return (level<ZSKIPLIST_MAXLEVEL) ? level : ZSKIPLIST_MAXLEVEL;
 }
 
-/* Insert a new node in the skiplist. Assumes the element does not already
- * exist (up to the caller to enforce that). The skiplist takes ownership
- * of the passed SDS string 'ele'. 
- * 在跳表中插入一个新的节点, */
+/* 在跳表中插入一个新的节点, */
 zskiplistNode *zslInsert(zskiplist *zsl, double score, sds ele) {
     zskiplistNode *update[ZSKIPLIST_MAXLEVEL], *x;
     unsigned int rank[ZSKIPLIST_MAXLEVEL];
@@ -152,11 +145,9 @@ zskiplistNode *zslInsert(zskiplist *zsl, double score, sds ele) {
         }
         update[i] = x;
     }
-    /* we assume the element is not already inside, since we allow duplicated
-     * scores, reinserting the same element should never happen since the
-     * caller of zslInsert() should test in the hash table if the element is
-     * already inside or not. */
-    level = zslRandomLevel();
+    /* skiplist中不会出现重复的元素，但我们允许重复的分值，因为如果是调用zslInsert()的话，不会出现重复插入两
+     * 个相同的元素，因为在zslInsert()中已经判断了hash表中是否存在*/
+    level = zslRandomLevel();  // 生成一个随机值，确定最高需要插入到第几级链表里  
     if (level > zsl->level) {
         for (i = zsl->level; i < level; i++) {
             rank[i] = 0;
@@ -165,17 +156,17 @@ zskiplistNode *zslInsert(zskiplist *zsl, double score, sds ele) {
         }
         zsl->level = level;
     }
-    x = zslCreateNode(level,score,ele);
+    x = zslCreateNode(level,score,ele);  // 为插入的数据创建新节点  
     for (i = 0; i < level; i++) {
         x->level[i].forward = update[i]->level[i].forward;
         update[i]->level[i].forward = x;
 
-        /* update span covered by update[i] as x is inserted here */
+        /*插入新节点后需要更新前后节点对应的span值 */
         x->level[i].span = update[i]->level[i].span - (rank[0] - rank[i]);
         update[i]->level[i].span = (rank[0] - rank[i]) + 1;
     }
 
-    /* increment span for untouched levels */
+    /* 为其他level增加span值，因为在原有俩节点之间插入了一个新节点 */
     for (i = level; i < zsl->level; i++) {
         update[i]->level[i].span++;
     }
@@ -195,7 +186,7 @@ void zslDeleteNode(zskiplist *zsl, zskiplistNode *x, zskiplistNode **update) {
     int i;
     for (i = 0; i < zsl->level; i++) {
         if (update[i]->level[i].forward == x) {
-            update[i]->level[i].span += x->level[i].span - 1;
+            update[i]->level[i].span += x->level[i].span - 1;  //删除节点需要修改span的值
             update[i]->level[i].forward = x->level[i].forward;
         } else {
             update[i]->level[i].span -= 1;
@@ -211,14 +202,10 @@ void zslDeleteNode(zskiplist *zsl, zskiplistNode *x, zskiplistNode **update) {
     zsl->length--;
 }
 
-/* Delete an element with matching score/element from the skiplist.
- * The function returns 1 if the node was found and deleted, otherwise
- * 0 is returned.
+/*从skiplist中删除ele，如果删除成功返回1，否则返回0. 
  *
- * If 'node' is NULL the deleted node is freed by zslFreeNode(), otherwise
- * it is not freed (but just unlinked) and *node is set to the node pointer,
- * so that it is possible for the caller to reuse the node (including the
- * referenced SDS string at node->ele). */
+ * 如果节点是null，需要调用zslFreeNode()释放掉该节点，否则只是把指向sds的指针置空，这样
+ * 后续其他的节点还可以继续使用这个sds*/
 int zslDelete(zskiplist *zsl, double score, sds ele, zskiplistNode **node) {
     zskiplistNode *update[ZSKIPLIST_MAXLEVEL], *x;
     int i;
@@ -234,8 +221,7 @@ int zslDelete(zskiplist *zsl, double score, sds ele, zskiplistNode **node) {
         }
         update[i] = x;
     }
-    /* We may have multiple elements with the same score, what we need
-     * is to find the element with both the right score and object. */
+    /* 可能有多个节点有相同的socre，都必须找出来并删除  */
     x = x->level[0].forward;
     if (x && score == x->score && sdscmp(x->ele,ele) == 0) {
         zslDeleteNode(zsl, x, update);
@@ -379,10 +365,10 @@ zskiplistNode *zslLastInRange(zskiplist *zsl, zrangespec *range) {
     return x;
 }
 
-/* Delete all the elements with score between min and max from the skiplist.
- * Min and max are inclusive, so a score >= min || score <= max is deleted.
- * Note that this function takes the reference to the hash table view of the
- * sorted set, in order to remove the elements from the hash table too. */
+/* 从skiplis中删除score在min和max之间的节点。min和max为闭区间，所以score >= min 
+ * 且score <= max的数据都会被删除。  
+ * 注意：这里操作的是sorted set中的引用，zset中hash table中的数据也需要删除才能
+ * 做到真正的删除。 */
 unsigned long zslDeleteRangeByScore(zskiplist *zsl, zrangespec *range, dict *dict) {
     zskiplistNode *update[ZSKIPLIST_MAXLEVEL], *x;
     unsigned long removed = 0;
@@ -397,7 +383,7 @@ unsigned long zslDeleteRangeByScore(zskiplist *zsl, zrangespec *range, dict *dic
         update[i] = x;
     }
 
-    /* Current node is the last with score < or <= min. */
+    /* Current node is the last with score < or <= min. */ 
     x = x->level[0].forward;
 
     /* Delete nodes while in range. */
@@ -1438,10 +1424,7 @@ int zsetAdd(robj *zobj, double score, sds ele, int *flags, double *newscore) {
     return 0; /* Never reached. */
 }
 
-/* Deletes the element 'ele' from the sorted set encoded as a skiplist+dict,
- * returning 1 if the element existed and was deleted, 0 otherwise (the
- * element was not there). It does not resize the dict after deleting the
- * element. */
+/* 从skiplist和dict中删除ele，如果删除成功返回1，0表示其中没有ele*/
 static int zsetRemoveFromSkiplist(zset *zs, sds ele) {
     dictEntry *de;
     double score;
@@ -1458,7 +1441,7 @@ static int zsetRemoveFromSkiplist(zset *zs, sds ele) {
          * we need to delete from the skiplist as the final step. */
         dictFreeUnlinkedEntry(zs->dict,de);
 
-        /* Delete from skiplist. */
+        /* 从skiplist中删除 */
         int retval = zslDelete(zs->zsl,score,ele,NULL);
         serverAssert(retval);
 
@@ -1560,7 +1543,7 @@ long zsetRank(robj *zobj, sds ele, int reverse) {
  * Sorted set commands
  *----------------------------------------------------------------------------*/
 
-/* This generic command implements both ZADD and ZINCRBY. */
+/* ZADD和ZINCRBY命令的实现. */
 void zaddGenericCommand(client *c, int flags) {
     static char *nanerr = "resulting score is not a number (NaN)";
     robj *key = c->argv[1];

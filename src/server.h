@@ -914,14 +914,15 @@ struct sharedObjectsStruct {
     sds minstring, maxstring;
 };
 
-/* ZSETs use a specialized version of Skiplists */
+/* ZSETs use a specialized version of Skiplists 
+ * skiplist节点定义 */
 typedef struct zskiplistNode {
     sds ele;
     double score;
-    struct zskiplistNode *backward;
+    struct zskiplistNode *backward; // 前向指针
     struct zskiplistLevel {
-        struct zskiplistNode *forward;
-        unsigned long span;
+        struct zskiplistNode *forward; // 每一层的后向指针 
+        unsigned long span;  // 下一个节点的跨度 
     } level[];
 } zskiplistNode;
 
