@@ -362,7 +362,7 @@ int aeProcessEvents(aeEventLoop *eventLoop, int flags)
     /* 如果flag位既不是时间事件，又不是文件事件，返回0 */
     if (!(flags & AE_TIME_EVENTS) && !(flags & AE_FILE_EVENTS)) return 0;
 
-    /* Note that we want call select() even if there are no
+    /* Note that we want to call select() even if there are no
      * file events to process as long as we want to process time
      * events, in order to sleep until the next time event is ready
      * to fire. */
