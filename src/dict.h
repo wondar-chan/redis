@@ -49,54 +49,48 @@
  */ 
 typedef struct dictEntry {
     void *key;
-    union {
+    union {   // dictEntry在不同用途时存储不同的数据 
         void *val;
         uint64_t u64;
         int64_t s64;
         double d;
     } v;
-    struct dictEntry *next;
+    struct dictEntry *next; // hash冲突时开链，单链表的next指针 
 } dictEntry;
 
 typedef struct dictType {
-    uint64_t (*hashFunction)(const void *key);
-    void *(*keyDup)(void *privdata, const void *key);
-    void *(*valDup)(void *privdata, const void *obj);
-    int (*keyCompare)(void *privdata, const void *key1, const void *key2);
-    void (*keyDestructor)(void *privdata, void *key);
-    void (*valDestructor)(void *privdata, void *obj);
+    uint64_t (*hashFunction)(const void *key);  // 对key生成hash值 
+    void *(*keyDup)(void *privdata, const void *key); // 对key进行拷贝 
+    void *(*valDup)(void *privdata, const void *obj);  // 对val进行拷贝
+    int (*keyCompare)(void *privdata, const void *key1, const void *key2); // 两个key的对比函数
+    void (*keyDestructor)(void *privdata, void *key); // key的销毁
+    void (*valDestructor)(void *privdata, void *obj); // val的销毁 
 } dictType;
 
-/* This is our hash table structure. Every dictionary has two of this as we
- * implement incremental rehashing, for the old to the new table. */
-/* 
- * 保存每个hashtable的数据信息，当前大小 hash掩码 使用量
- */
+/*  保存每个hashtable的数据信息，当前大小 hash掩码 使用量 */
 typedef struct dictht {
-    dictEntry **table;
-    unsigned long size;
-    unsigned long sizemask;
-    unsigned long used;
+    dictEntry **table;  // hashtable中的连续空间 
+    unsigned long size; // table的大小 
+    unsigned long sizemask;  // hashcode的掩码  
+    unsigned long used; // 已存储的数据个数
 } dictht;
 
 typedef struct dict {
-    dictType *type;
-    void *privdata;
-    dictht ht[2];
-    long rehashidx; /* 增量hash过程过程中记录rehash执行到第几个位置了，当rehashidx == -1表示没有在做rehash */
-    unsigned long iterators; /* number of iterators currently running */
+    dictType *type;  // dictType结构的指针，封装了很多数据操作的函数指针，使得dict能处理任意数据类型（类似面向对象语言的interface，可以重载其方法）
+    void *privdata;  // 一个私有数据指针(privdata),由调用者在创建dict的时候传进来。
+    dictht ht[2];  // 两个hashtable，ht[0]为主，ht[1]在渐进式hash的过程中才会用到。  
+    long rehashidx; /* 增量hash过程过程中记录rehash执行到第几个bucket了，当rehashidx == -1表示没有在做rehash */
+    unsigned long iterators; /* 正在运行的迭代器数量 */
 } dict;
 
-/* If safe is set to 1 this is a safe iterator, that means, you can call
- * dictAdd, dictFind, and other functions against the dictionary even while
- * iterating. Otherwise it is a non safe iterator, and only dictNext()
- * should be called while iterating. */
-typedef struct dictIterator {
+/*  如果safe为1，说明他是一个安全的迭代器，可以调用dictAdd、dictFind或者其他dict函数。
+ * 否则，说明当前迭代器是非安全的，只能调用dictNext()方法 */
+typedef struct dictIterator { 
     dict *d;
     long index;
     int table, safe;
     dictEntry *entry, *nextEntry;
-    /* unsafe iterator fingerprint for misuse detection. */
+    /* 不安全迭代器的指纹，用于误用检测 */
     long long fingerprint;
 } dictIterator;
 
@@ -153,26 +147,28 @@ typedef void (dictScanBucketFunction)(void *privdata, dictEntry **bucketref);
 #define dictSize(d) ((d)->ht[0].used+(d)->ht[1].used)
 #define dictIsRehashing(d) ((d)->rehashidx != -1)
 
-/* API */
-dict *dictCreate(dictType *type, void *privDataPtr);
-int dictExpand(dict *d, unsigned long size);
-int dictAdd(dict *d, void *key, void *val);
-dictEntry *dictAddRaw(dict *d, void *key, dictEntry **existing);
-dictEntry *dictAddOrFind(dict *d, void *key);
-int dictReplace(dict *d, void *key, void *val);
-int dictDelete(dict *d, const void *key);
-dictEntry *dictUnlink(dict *ht, const void *key);
-void dictFreeUnlinkedEntry(dict *d, dictEntry *he);
-void dictRelease(dict *d);
-dictEntry * dictFind(dict *d, const void *key);
-void *dictFetchValue(dict *d, const void *key);
-int dictResize(dict *d);
-dictIterator *dictGetIterator(dict *d);
+/* dict所有的API */
+dict *dictCreate(dictType *type, void *privDataPtr);  // 创建dict 
+int dictExpand(dict *d, unsigned long size);  // 扩缩容
+int dictAdd(dict *d, void *key, void *val);  // 添加k-v
+dictEntry *dictAddRaw(dict *d, void *key, dictEntry **existing); // 添加的key对应的dictEntry 
+dictEntry *dictAddOrFind(dict *d, void *key); // 添加或者查找 
+int dictReplace(dict *d, void *key, void *val); // 替换key对应的value，如果没有就添加新的k-v
+int dictDelete(dict *d, const void *key);  // 删除某个key对应的数据 
+dictEntry *dictUnlink(dict *ht, const void *key); // 卸载某个key对应的entry 
+void dictFreeUnlinkedEntry(dict *d, dictEntry *he); // 卸载并清除key对应的entry
+void dictRelease(dict *d);  // 释放整个dict 
+dictEntry * dictFind(dict *d, const void *key);  // 数据查找
+void *dictFetchValue(dict *d, const void *key);  // 获取key对应的value
+int dictResize(dict *d);  // 重设dict的大小，主要是缩容用的
+/************    迭代器相关     *********** */
+dictIterator *dictGetIterator(dict *d);  
 dictIterator *dictGetSafeIterator(dict *d);
 dictEntry *dictNext(dictIterator *iter);
 void dictReleaseIterator(dictIterator *iter);
-dictEntry *dictGetRandomKey(dict *d);
-dictEntry *dictGetFairRandomKey(dict *d);
+/************    迭代器相关     *********** */
+dictEntry *dictGetRandomKey(dict *d);  // 随机返回一个entry 
+dictEntry *dictGetFairRandomKey(dict *d);   // 随机返回一个entry，但返回每个entry的概率会更均匀 
 unsigned int dictGetSomeKeys(dict *d, dictEntry **des, unsigned int count);
 void dictGetStats(char *buf, size_t bufsize, dict *d);
 uint64_t dictGenHashFunction(const void *key, int len);
