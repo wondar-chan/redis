@@ -169,8 +169,8 @@ void dictReleaseIterator(dictIterator *iter);
 /************    迭代器相关     *********** */
 dictEntry *dictGetRandomKey(dict *d);  // 随机返回一个entry 
 dictEntry *dictGetFairRandomKey(dict *d);   // 随机返回一个entry，但返回每个entry的概率会更均匀 
-unsigned int dictGetSomeKeys(dict *d, dictEntry **des, unsigned int count);
-void dictGetStats(char *buf, size_t bufsize, dict *d);
+unsigned int dictGetSomeKeys(dict *d, dictEntry **des, unsigned int count); // 获取dict中的部分数据 
+void dictGetStats(char *buf, size_t bufsize, dict *d);  
 uint64_t dictGenHashFunction(const void *key, int len);
 uint64_t dictGenCaseHashFunction(const unsigned char *buf, int len);
 void dictEmpty(dict *d, void(callback)(void*));
