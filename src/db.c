@@ -468,7 +468,7 @@ dbBackup *backupDb(void) {
     for (int i=0; i<server.dbnum; i++) {
         backup->dbarray[i] = server.db[i];
         server.db[i].dict = dictCreate(&dbDictType,NULL);
-        server.db[i].expires = dictCreate(&keyptrDictType,NULL);
+        server.db[i].expires = dictCreate(&dbExpiresDictType,NULL);
     }
 
     /* Backup cluster slots to keys map if enable cluster. */
@@ -480,6 +480,10 @@ dbBackup *backupDb(void) {
         memset(server.cluster->slots_keys_count, 0,
             sizeof(server.cluster->slots_keys_count));
     }
+
+    moduleFireServerEvent(REDISMODULE_EVENT_REPL_BACKUP,
+                          REDISMODULE_SUBEVENT_REPL_BACKUP_CREATE,
+                          NULL);
 
     return backup;
 }
@@ -502,6 +506,10 @@ void discardDbBackup(dbBackup *buckup, int flags, void(callback)(void*)) {
     /* Release buckup. */
     zfree(buckup->dbarray);
     zfree(buckup);
+
+    moduleFireServerEvent(REDISMODULE_EVENT_REPL_BACKUP,
+                          REDISMODULE_SUBEVENT_REPL_BACKUP_DISCARD,
+                          NULL);
 }
 
 /* Restore the previously created backup (discarding what currently resides
@@ -530,6 +538,10 @@ void restoreDbBackup(dbBackup *buckup) {
     /* Release buckup. */
     zfree(buckup->dbarray);
     zfree(buckup);
+
+    moduleFireServerEvent(REDISMODULE_EVENT_REPL_BACKUP,
+                          REDISMODULE_SUBEVENT_REPL_BACKUP_RESTORE,
+                          NULL);
 }
 
 int selectDb(client *c, int id) {
@@ -965,6 +977,7 @@ void scanGenericCommand(client *c, robj *o, unsigned long cursor) {
          * value, or skip it if it was not filtered: we only match keys. */
         if (o && (o->type == OBJ_ZSET || o->type == OBJ_HASH)) {
             node = nextnode;
+            serverAssert(node); /* assertion for valgrind (avoid NPD) */
             nextnode = listNextNode(node);
             if (filter) {
                 kobj = listNodeValue(node);
@@ -1246,12 +1259,12 @@ void copyCommand(client *c) {
         case OBJ_HASH: newobj = hashTypeDup(o); break;
         case OBJ_STREAM: newobj = streamDup(o); break;
         case OBJ_MODULE:
-            addReplyError(c, "Copying module type object is not supported");
-            return;
-        default: {
+            newobj = moduleTypeDupOrReply(c, key, newkey, o);
+            if (!newobj) return;
+            break;
+        default:
             addReplyError(c, "unknown type object");
             return;
-        };
     }
 
     if (delete) {

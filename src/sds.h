@@ -224,6 +224,7 @@ static inline void sdssetalloc(sds s, size_t newlen) {
 }
 
 sds sdsnewlen(const void *init, size_t initlen);  // 新建一个容量为initlen的sds
+sds sdstrynewlen(const void *init, size_t initlen);
 sds sdsnew(const char *init); // 新建sds，字符串为null，默认长度0 
 sds sdsempty(void);  // 新建空字符“” 
 sds sdsdup(const sds s); // 根据s的实际长度创建新的sds，目的是降低内存的占用

@@ -146,10 +146,16 @@ int dictResize(dict *d)
     return dictExpand(d, minimal);
 }
 
+/* Expand or create the hash table,
+ * when malloc_failed is non-NULL, it'll avoid panic if malloc fails (in which case it'll be set to 1).
+ * Returns DICT_OK if expand was performed, and DICT_ERR if skipped. */
 /* dict的创建和扩容 */ 
-int dictExpand(dict *d, unsigned long size)
+int _dictExpand(dict *d, unsigned long size, int* malloc_failed)
 {
-    /* 如果size比hashtable中的元素个数还小，那size就是无效的，直接返回error */
+    if (malloc_failed) *malloc_failed = 0;
+
+    /* the size is invalid if it is smaller than the number of
+     * elements already inside the hash table */
     if (dictIsRehashing(d) || d->ht[0].used > size)
         return DICT_ERR;
 
@@ -163,7 +169,14 @@ int dictExpand(dict *d, unsigned long size)
     /* 新建一个容量更大的hashtable */
     n.size = realsize;
     n.sizemask = realsize-1;
-    n.table = zcalloc(realsize*sizeof(dictEntry*));
+    if (malloc_failed) {
+        n.table = ztrycalloc(realsize*sizeof(dictEntry*));
+        *malloc_failed = n.table == NULL;
+        if (*malloc_failed)
+            return DICT_ERR;
+    } else
+        n.table = zcalloc(realsize*sizeof(dictEntry*));
+
     n.used = 0;
 
     // 如果是dict初始化的情况，直接把新建的hashtable赋值给ht[0]就行 
@@ -176,6 +189,18 @@ int dictExpand(dict *d, unsigned long size)
     d->ht[1] = n;
     d->rehashidx = 0; // rehashidx表示当前rehash到ht[0]的下标位置 
     return DICT_OK;
+}
+
+/* return DICT_ERR if expand was not performed */
+int dictExpand(dict *d, unsigned long size) {
+    return _dictExpand(d, size, NULL);
+}
+
+/* return DICT_ERR if expand failed due to memory allocation failure */
+int dictTryExpand(dict *d, unsigned long size) {
+    int malloc_failed;
+    _dictExpand(d, size, &malloc_failed);
+    return malloc_failed? DICT_ERR : DICT_OK;
 }
 
 /* Performs N steps of incremental rehashing. Returns 1 if there are still
@@ -940,6 +965,16 @@ unsigned long dictScan(dict *d,
 
 /* ------------------------- dict私有方法 ------------------------------ */
 
+/* Because we may need to allocate huge memory chunk at once when dict
+ * expands, we will check this allocation is allowed or not if the dict
+ * type has expandAllowed member function. */
+static int dictTypeExpandAllowed(dict *d) {
+    if (d->type->expandAllowed == NULL) return 1;
+    return d->type->expandAllowed(
+                    _dictNextPower(d->ht[0].used + 1) * sizeof(dictEntry*),
+                    (double)d->ht[0].used / d->ht[0].size);
+}
+
 /* 检查是否dict需要扩容 */
 static int _dictExpandIfNeeded(dict *d)
 {
@@ -952,9 +987,10 @@ static int _dictExpandIfNeeded(dict *d)
     /* 当配置了可扩容时，容量负载达到100%就扩容。配置不可扩容时，负载达到5也会强制扩容*/
     if (d->ht[0].used >= d->ht[0].size &&
         (dict_can_resize ||
-         d->ht[0].used/d->ht[0].size > dict_force_resize_ratio))
+         d->ht[0].used/d->ht[0].size > dict_force_resize_ratio) &&
+        dictTypeExpandAllowed(d))
     {
-        return dictExpand(d, d->ht[0].used*2);
+        return dictExpand(d, d->ht[0].used + 1);
     }
     return DICT_OK;
 }
@@ -1156,6 +1192,7 @@ dictType BenchmarkDictType = {
     NULL,
     compareCallback,
     freeCallback,
+    NULL,
     NULL
 };
 

@@ -430,6 +430,8 @@ int clusterLockConfig(char *filename) {
      * (redis-aof-rewrite) is still alive, the fd(lock) will still be held by the
      * child process, and the main process will fail to get lock, means fail to start. */
     server.cluster_config_file_lock_fd = fd;
+#else
+    UNUSED(filename);
 #endif /* __sun */
 
     return C_OK;
@@ -4985,6 +4987,9 @@ int verifyDumpPayload(unsigned char *p, size_t len) {
     /* Verify RDB version */
     rdbver = (footer[1] << 8) | footer[0];
     if (rdbver > RDB_VERSION) return C_ERR;
+
+    if (server.skip_checksum_validation)
+        return C_OK;
 
     /* Verify CRC64 */
     crc = crc64(0,p,len-8);

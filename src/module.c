@@ -50,6 +50,7 @@ typedef struct RedisModuleInfoCtx {
 } RedisModuleInfoCtx;
 
 typedef void (*RedisModuleInfoFunc)(RedisModuleInfoCtx *ctx, int for_crash_report);
+typedef void (*RedisModuleDefragFunc)(struct RedisModuleDefragCtx *ctx);
 
 /* This structure represents a module inside the system. */
 struct RedisModule {
@@ -66,6 +67,7 @@ struct RedisModule {
     int options;    /* Module options and capabilities. */
     int blocked_clients;         /* Count of RedisModuleBlockedClient in this module. */
     RedisModuleInfoFunc info_cb; /* Callback for module to add INFO fields. */
+    RedisModuleDefragFunc defrag_cb;    /* Callback for global data defrag. */
 };
 typedef struct RedisModule RedisModule;
 
@@ -158,14 +160,13 @@ struct RedisModuleCtx {
 typedef struct RedisModuleCtx RedisModuleCtx;
 
 #define REDISMODULE_CTX_INIT {(void*)(unsigned long)&RM_GetApi, NULL, NULL, NULL, NULL, 0, 0, 0, NULL, 0, NULL, NULL, NULL, NULL, {0}}
-#define REDISMODULE_CTX_MULTI_EMITTED (1<<0)
-#define REDISMODULE_CTX_AUTO_MEMORY (1<<1)
-#define REDISMODULE_CTX_KEYS_POS_REQUEST (1<<2)
-#define REDISMODULE_CTX_BLOCKED_REPLY (1<<3)
-#define REDISMODULE_CTX_BLOCKED_TIMEOUT (1<<4)
-#define REDISMODULE_CTX_THREAD_SAFE (1<<5)
-#define REDISMODULE_CTX_BLOCKED_DISCONNECTED (1<<6)
-#define REDISMODULE_CTX_MODULE_COMMAND_CALL (1<<7)
+#define REDISMODULE_CTX_AUTO_MEMORY (1<<0)
+#define REDISMODULE_CTX_KEYS_POS_REQUEST (1<<1)
+#define REDISMODULE_CTX_BLOCKED_REPLY (1<<2)
+#define REDISMODULE_CTX_BLOCKED_TIMEOUT (1<<3)
+#define REDISMODULE_CTX_THREAD_SAFE (1<<4)
+#define REDISMODULE_CTX_BLOCKED_DISCONNECTED (1<<5)
+#define REDISMODULE_CTX_MODULE_COMMAND_CALL (1<<6)
 
 /* This represents a Redis key opened with RM_OpenKey(). */
 struct RedisModuleKey {
@@ -578,12 +579,15 @@ void moduleHandlePropagationAfterCommandCallback(RedisModuleCtx *ctx) {
 
     /* We don't need to do anything here if the context was never used
      * in order to propagate commands. */
-    if (!(ctx->flags & REDISMODULE_CTX_MULTI_EMITTED)) return;
+    if (!server.propagate_in_transaction) return;
 
-    if (c->flags & CLIENT_LUA) return;
+    /* If this command is executed from with Lua or MULTI/EXEC we do noy
+     * need to propagate EXEC */
+    if (server.in_eval || server.in_exec) return;
 
     /* Handle the replication of the final EXEC, since whatever a command
      * emits is always wrapped around MULTI/EXEC. */
+    beforePropagateMultiOrExec(0);
     alsoPropagate(server.execCommand,c->db->id,&shared.exec,1,
         PROPAGATE_AOF|PROPAGATE_REPL);
 
@@ -873,6 +877,7 @@ void RM_SetModuleAttribs(RedisModuleCtx *ctx, const char *name, int ver, int api
     module->in_hook = 0;
     module->options = 0;
     module->info_cb = 0;
+    module->defrag_cb = 0;
     ctx->module = module;
 }
 
@@ -1610,9 +1615,9 @@ int RM_ReplyWithLongDouble(RedisModuleCtx *ctx, long double ld) {
 void moduleReplicateMultiIfNeeded(RedisModuleCtx *ctx) {
     /* Skip this if client explicitly wrap the command with MULTI, or if
      * the module command was called by a script. */
-    if (ctx->client->flags & (CLIENT_MULTI|CLIENT_LUA)) return;
+    if (server.lua_caller || server.in_exec) return;
     /* If we already emitted MULTI return ASAP. */
-    if (ctx->flags & REDISMODULE_CTX_MULTI_EMITTED) return;
+    if (server.propagate_in_transaction) return;
     /* If this is a thread safe context, we do not want to wrap commands
      * executed into MULTI/EXEC, they are executed as single commands
      * from an external client in essence. */
@@ -1625,7 +1630,6 @@ void moduleReplicateMultiIfNeeded(RedisModuleCtx *ctx) {
         redisOpArrayInit(&server.also_propagate);
     }
     execCommandPropagateMulti(ctx->client);
-    ctx->flags |= REDISMODULE_CTX_MULTI_EMITTED;
 }
 
 /* Replicate the specified command and arguments to slaves and AOF, as effect
@@ -1938,20 +1942,16 @@ int RM_GetSelectedDb(RedisModuleCtx *ctx) {
  *                                    background child process.
  */
 int RM_GetContextFlags(RedisModuleCtx *ctx) {
-
     int flags = 0;
+
     /* Client specific flags */
     if (ctx) {
         if (ctx->client) {
-            if (ctx->client->flags & CLIENT_LUA)
-             flags |= REDISMODULE_CTX_FLAGS_LUA;
-            if (ctx->client->flags & CLIENT_MULTI)
-             flags |= REDISMODULE_CTX_FLAGS_MULTI;
             if (ctx->client->flags & CLIENT_DENY_BLOCKING)
-             flags |= REDISMODULE_CTX_FLAGS_DENY_BLOCKING;
+                flags |= REDISMODULE_CTX_FLAGS_DENY_BLOCKING;
             /* Module command received from MASTER, is replicated. */
             if (ctx->client->flags & CLIENT_MASTER)
-             flags |= REDISMODULE_CTX_FLAGS_REPLICATED;
+                flags |= REDISMODULE_CTX_FLAGS_REPLICATED;
         }
 
         /* For DIRTY flags, we need the blocked client if used */
@@ -1960,6 +1960,12 @@ int RM_GetContextFlags(RedisModuleCtx *ctx) {
             flags |= REDISMODULE_CTX_FLAGS_MULTI_DIRTY;
         }
     }
+
+    if (server.in_eval)
+        flags |= REDISMODULE_CTX_FLAGS_LUA;
+
+    if (server.in_exec)
+        flags |= REDISMODULE_CTX_FLAGS_MULTI;
 
     if (server.cluster_enabled)
         flags |= REDISMODULE_CTX_FLAGS_CLUSTER;
@@ -3636,6 +3642,24 @@ void moduleTypeNameByID(char *name, uint64_t moduleid) {
     }
 }
 
+/* Create a copy of a module type value using the copy callback. If failed
+ * or not supported, produce an error reply and return NULL.
+ */
+robj *moduleTypeDupOrReply(client *c, robj *fromkey, robj *tokey, robj *value) {
+    moduleValue *mv = value->ptr;
+    moduleType *mt = mv->type;
+    if (!mt->copy) {
+        addReplyError(c, "not supported for this module key");
+        return NULL;
+    }
+    void *newval = mt->copy(fromkey, tokey, mv->value);
+    if (!newval) {
+        addReplyError(c, "module key failed to copy");
+        return NULL;
+    }
+    return createModuleObject(mt, newval);
+}
+
 /* Register a new data type exported by the module. The parameters are the
  * following. Please for in depth documentation check the modules API
  * documentation, especially https://redis.io/topics/modules-native-types.
@@ -3673,8 +3697,10 @@ void moduleTypeNameByID(char *name, uint64_t moduleid) {
  *          .mem_usage = myType_MemUsageCallBack,
  *          .aux_load = myType_AuxRDBLoadCallBack,
  *          .aux_save = myType_AuxRDBSaveCallBack,
- *          .free_effort = myType_FreeEffortCallBack
- *          .unlink = myType_UnlinkCallBack
+ *          .free_effort = myType_FreeEffortCallBack,
+ *          .unlink = myType_UnlinkCallBack,
+ *          .copy = myType_CopyCallback,
+ *          .defrag = myType_DefragCallback
  *      }
  *
  * * **rdb_load**: A callback function pointer that loads data from RDB files.
@@ -3694,9 +3720,27 @@ void moduleTypeNameByID(char *name, uint64_t moduleid) {
  *   been removed from the DB by redis, and may soon be freed by a background thread. Note that 
  *   it won't be called on FLUSHALL/FLUSHDB (both sync and async), and the module can use the 
  *   RedisModuleEvent_FlushDB to hook into that.
+ * * **copy**: A callback function pointer that is used to make a copy of the specified key.
+ *   The module is expected to perform a deep copy of the specified value and return it.
+ *   In addition, hints about the names of the source and destination keys is provided.
+ *   A NULL return value is considered an error and the copy operation fails.
+ *   Note: if the target key exists and is being overwritten, the copy callback will be
+ *   called first, followed by a free callback to the value that is being replaced.
  * 
- * The **digest** and **mem_usage** methods should currently be omitted since
- * they are not yet implemented inside the Redis modules core.
+ * * **defrag**: A callback function pointer that is used to request the module to defrag
+ *   a key. The module should then iterate pointers and call the relevant RM_Defrag*()
+ *   functions to defragment pointers or complex types. The module should continue
+ *   iterating as long as RM_DefragShouldStop() returns a zero value, and return a
+ *   zero value if finished or non-zero value if more work is left to be done. If more work
+ *   needs to be done, RM_DefragCursorSet() and RM_DefragCursorGet() can be used to track
+ *   this work across different calls.
+ *   Normally, the defrag mechanism invokes the callback without a time limit, so
+ *   RM_DefragShouldStop() always returns zero. The "late defrag" mechanism which has
+ *   a time limit and provides cursor support is used only for keys that are determined
+ *   to have significant internal complexity. To determine this, the defrag mechanism
+ *   uses the free_effort callback and the 'active-defrag-max-scan-fields' config directive.
+ *   NOTE: The value is passed as a void** and the function is expected to update the
+ *   pointer if the top-level value pointer is defragmented and consequentially changes.
  *
  * Note: the module name "AAAAAAAAA" is reserved and produces an error, it
  * happens to be pretty lame as well.
@@ -3740,6 +3784,8 @@ moduleType *RM_CreateDataType(RedisModuleCtx *ctx, const char *name, int encver,
         struct {
             moduleTypeFreeEffortFunc free_effort;
             moduleTypeUnlinkFunc unlink;
+            moduleTypeCopyFunc copy;
+            moduleTypeDefragFunc defrag;
         } v3;
     } *tms = (struct typemethods*) typemethods_ptr;
 
@@ -3760,6 +3806,8 @@ moduleType *RM_CreateDataType(RedisModuleCtx *ctx, const char *name, int encver,
     if (tms->version >= 3) {
         mt->free_effort = tms->v3.free_effort;
         mt->unlink = tms->v3.unlink;
+        mt->copy = tms->v3.copy;
+        mt->defrag = tms->v3.defrag;
     }
     memcpy(mt->name,name,sizeof(mt->name));
     listAddNodeTail(ctx->module->types,mt);
@@ -4497,8 +4545,8 @@ void unblockClientFromModule(client *c) {
  */
 RedisModuleBlockedClient *moduleBlockClient(RedisModuleCtx *ctx, RedisModuleCmdFunc reply_callback, RedisModuleCmdFunc timeout_callback, void (*free_privdata)(RedisModuleCtx*,void*), long long timeout_ms, RedisModuleString **keys, int numkeys, void *privdata) {
     client *c = ctx->client;
-    int islua = c->flags & CLIENT_LUA;
-    int ismulti = c->flags & CLIENT_MULTI;
+    int islua = server.in_eval;
+    int ismulti = server.in_exec;
 
     c->bpop.module_blocked_handle = zmalloc(sizeof(RedisModuleBlockedClient));
     RedisModuleBlockedClient *bc = c->bpop.module_blocked_handle;
@@ -7036,7 +7084,7 @@ int RM_Fork(RedisModuleForkDoneHandler cb, void *user_data) {
         moduleForkInfo.done_handler = cb;
         moduleForkInfo.done_handler_user_data = user_data;
         updateDictResizePolicy();
-        serverLog(LL_VERBOSE, "Module fork started pid: %d ", childpid);
+        serverLog(LL_VERBOSE, "Module fork started pid: %ld ", (long) childpid);
     }
     return childpid;
 }
@@ -7086,8 +7134,8 @@ int RM_KillForkChild(int child_pid) {
 
 void ModuleForkDoneHandler(int exitcode, int bysignal) {
     serverLog(LL_NOTICE,
-        "Module fork exited pid: %d, retcode: %d, bysignal: %d",
-        server.module_child_pid, exitcode, bysignal);
+        "Module fork exited pid: %ld, retcode: %d, bysignal: %d",
+        (long) server.module_child_pid, exitcode, bysignal);
     if (moduleForkInfo.done_handler) {
         moduleForkInfo.done_handler(exitcode, bysignal,
             moduleForkInfo.done_handler_user_data);
@@ -7302,7 +7350,7 @@ void ModuleForkDoneHandler(int exitcode, int bysignal) {
  *
  *      RedisModuleEvent_SwapDB
  *
- *          This event is called when a swap db command has been successfully 
+ *          This event is called when a SWAPDB command has been successfully
  *          Executed. 
  *          For this event call currently there is no subevents available.
  *
@@ -7312,6 +7360,18 @@ void ModuleForkDoneHandler(int exitcode, int bysignal) {
  *             int32_t dbnum_first;    // Swap Db first dbnum 
  *             int32_t dbnum_second;   // Swap Db second dbnum 
  *
+ *      RedisModuleEvent_ReplBackup
+ *
+ *          Called when diskless-repl-load config is set to swapdb,
+ *          And redis needs to backup the the current database for the
+ *          possibility to be restored later. A module with global data and
+ *          maybe with aux_load and aux_save callbacks may need to use this
+ *          notification to backup / restore / discard its globals.
+ *          The following sub events are available:
+ *
+ *              REDISMODULE_SUBEVENT_REPL_BACKUP_CREATE
+ *              REDISMODULE_SUBEVENT_REPL_BACKUP_RESTORE
+ *              REDISMODULE_SUBEVENT_REPL_BACKUP_DISCARD
  *
  *
  * The function returns REDISMODULE_OK if the module was successfully subscribed
@@ -7384,6 +7444,8 @@ int RM_IsSubEventSupported(RedisModuleEvent event, int64_t subevent) {
         return subevent < _REDISMODULE_SUBEVENT_LOADING_PROGRESS_NEXT;
     case REDISMODULE_EVENT_SWAPDB:
         return subevent < _REDISMODULE_SUBEVENT_SWAPDB_NEXT;
+    case REDISMODULE_EVENT_REPL_BACKUP:
+        return subevent < _REDISMODULE_SUBEVENT_REPL_BACKUP_NEXT;
     default:
         break;
     }
@@ -7552,7 +7614,8 @@ dictType moduleAPIDictType = {
     NULL,                      /* val dup */
     dictCStringKeyCompare,     /* key compare */
     NULL,                      /* key destructor */
-    NULL                       /* val destructor */
+    NULL,                      /* val destructor */
+    NULL                       /* allow to expand */
 };
 
 int moduleRegisterApi(const char *funcname, void *funcptr) {
@@ -8137,6 +8200,205 @@ int *RM_GetCommandKeys(RedisModuleCtx *ctx, RedisModuleString **argv, int argc, 
     return res;
 }
 
+/* The defrag context, used to manage state during calls to the data type
+ * defrag callback.
+ */
+typedef struct RedisModuleDefragCtx {
+    long defragged;
+    long long int endtime;
+    unsigned long *cursor;
+} RedisModuleDefragCtx;
+
+/* Register a defrag callback for global data, i.e. anything that the module
+ * may allocate that is not tied to a specific data type.
+ */
+int RM_RegisterDefragFunc(RedisModuleCtx *ctx, RedisModuleDefragFunc cb) {
+    ctx->module->defrag_cb = cb;
+    return REDISMODULE_OK;
+}
+
+/* When the data type defrag callback iterates complex structures, this
+ * function should be called periodically. A zero (false) return
+ * indicates the callback may continue its work. A non-zero value (true)
+ * indicates it should stop.
+ *
+ * When stopped, the callback may use RM_DefragCursorSet() to store its
+ * position so it can later use RM_DefragCursorGet() to resume defragging.
+ *
+ * When stopped and more work is left to be done, the callback should
+ * return 1. Otherwise, it should return 0.
+ *
+ * NOTE: Modules should consider the frequency in which this function is called,
+ * so it generally makes sense to do small batches of work in between calls.
+ */
+int RM_DefragShouldStop(RedisModuleDefragCtx *ctx) {
+    return (ctx->endtime != 0 && ctx->endtime < ustime());
+}
+
+/* Store an arbitrary cursor value for future re-use.
+ *
+ * This should only be called if RM_DefragShouldStop() has returned a non-zero
+ * value and the defrag callback is about to exit without fully iterating its
+ * data type.
+ *
+ * This behavior is reserved to cases where late defrag is performed. Late
+ * defrag is selected for keys that implement the free_effort callback and
+ * return a free_effort value that is larger than the defrag
+ * 'active-defrag-max-scan-fields' configuration directive.
+ *
+ * Smaller keys, keys that do not implement free_effort or the global
+ * defrag callback are not called in late-defrag mode. In those cases, a
+ * call to this function will return REDISMODULE_ERR.
+ *
+ * The cursor may be used by the module to represent some progress into the
+ * module's data type. Modules may also store additional cursor-related
+ * information locally and use the cursor as a flag that indicates when
+ * traversal of a new key begins. This is possible because the API makes
+ * a guarantee that concurrent defragmentation of multiple keys will
+ * not be performed.
+ */
+int RM_DefragCursorSet(RedisModuleDefragCtx *ctx, unsigned long cursor) {
+    if (!ctx->cursor)
+        return REDISMODULE_ERR;
+
+    *ctx->cursor = cursor;
+    return REDISMODULE_OK;
+}
+
+/* Fetch a cursor value that has been previously stored using RM_DefragCursorSet().
+ *
+ * If not called for a late defrag operation, REDISMODULE_ERR will be returned and
+ * the cursor should be ignored. See DM_DefragCursorSet() for more details on
+ * defrag cursors.
+ */
+int RM_DefragCursorGet(RedisModuleDefragCtx *ctx, unsigned long *cursor) {
+    if (!ctx->cursor)
+        return REDISMODULE_ERR;
+
+    *cursor = *ctx->cursor;
+    return REDISMODULE_OK;
+}
+
+/* Defrag a memory allocation previously allocated by RM_Alloc, RM_Calloc, etc.
+ * The defragmentation process involves allocating a new memory block and copying
+ * the contents to it, like realloc().
+ *
+ * If defragmentation was not necessary, NULL is returned and the operation has
+ * no other effect.
+ *
+ * If a non-NULL value is returned, the caller should use the new pointer instead
+ * of the old one and update any reference to the old pointer, which must not
+ * be used again.
+ */
+void *RM_DefragAlloc(RedisModuleDefragCtx *ctx, void *ptr) {
+    void *newptr = activeDefragAlloc(ptr);
+    if (newptr)
+        ctx->defragged++;
+
+    return newptr;
+}
+
+/* Defrag a RedisModuleString previously allocated by RM_Alloc, RM_Calloc, etc.
+ * See RM_DefragAlloc() for more information on how the defragmentation process
+ * works.
+ *
+ * NOTE: It is only possible to defrag strings that have a single reference.
+ * Typically this means strings retained with RM_RetainString or RM_HoldString
+ * may not be defragmentable. One exception is command argvs which, if retained
+ * by the module, will end up with a single reference (because the reference
+ * on the Redis side is dropped as soon as the command callback returns).
+ */
+RedisModuleString *RM_DefragRedisModuleString(RedisModuleDefragCtx *ctx, RedisModuleString *str) {
+    return activeDefragStringOb(str, &ctx->defragged);
+}
+
+
+/* Perform a late defrag of a module datatype key.
+ *
+ * Returns a zero value (and initializes the cursor) if no more needs to be done,
+ * or a non-zero value otherwise.
+ */
+int moduleLateDefrag(robj *key, robj *value, unsigned long *cursor, long long endtime, long long *defragged) {
+    moduleValue *mv = value->ptr;
+    moduleType *mt = mv->type;
+
+    RedisModuleDefragCtx defrag_ctx = { 0, endtime, cursor };
+
+    /* Invoke callback. Note that the callback may be missing if the key has been
+     * replaced with a different type since our last visit.
+     */
+    int ret = 0;
+    if (mt->defrag)
+        ret = mt->defrag(&defrag_ctx, key, &mv->value);
+
+    *defragged += defrag_ctx.defragged;
+    if (!ret) {
+        *cursor = 0;    /* No more work to do */
+        return 0;
+    }
+
+    return 1;
+}
+
+/* Attempt to defrag a module data type value. Depending on complexity,
+ * the operation may happen immediately or be scheduled for later.
+ *
+ * Returns 1 if the operation has been completed or 0 if it needs to
+ * be scheduled for late defrag.
+ */
+int moduleDefragValue(robj *key, robj *value, long *defragged) {
+    moduleValue *mv = value->ptr;
+    moduleType *mt = mv->type;
+
+    /* Try to defrag moduleValue itself regardless of whether or not
+     * defrag callbacks are provided.
+     */
+    moduleValue *newmv = activeDefragAlloc(mv);
+    if (newmv) {
+        (*defragged)++;
+        value->ptr = mv = newmv;
+    }
+
+    if (!mt->defrag)
+        return 1;
+
+    /* Use free_effort to determine complexity of module value, and if
+     * necessary schedule it for defragLater instead of quick immediate
+     * defrag.
+     */
+    if (mt->free_effort) {
+        size_t effort = mt->free_effort(key, mv->value);
+        if (!effort)
+            effort = SIZE_MAX;
+        if (effort > server.active_defrag_max_scan_fields) {
+            return 0;  /* Defrag later */
+        }
+    }
+
+    RedisModuleDefragCtx defrag_ctx = { 0, 0, NULL };
+    mt->defrag(&defrag_ctx, key, &mv->value);
+    (*defragged) += defrag_ctx.defragged;
+    return 1;
+}
+
+/* Call registered module API defrag functions */
+long moduleDefragGlobals(void) {
+    dictIterator *di = dictGetIterator(modules);
+    dictEntry *de;
+    long defragged = 0;
+
+    while ((de = dictNext(di)) != NULL) {
+        struct RedisModule *module = dictGetVal(de);
+        if (!module->defrag_cb)
+            continue;
+        RedisModuleDefragCtx defrag_ctx = { 0, 0, NULL };
+        module->defrag_cb(&defrag_ctx);
+        defragged += defrag_ctx.defragged;
+    }
+
+    return defragged;
+}
+
 /* Register all the APIs we export. Keep this function at the end of the
  * file so that's easy to seek it to add new entries. */
 void moduleRegisterCoreAPI(void) {
@@ -8380,4 +8642,10 @@ void moduleRegisterCoreAPI(void) {
     REGISTER_API(GetClientCertificate);
     REGISTER_API(GetCommandKeys);
     REGISTER_API(GetTypeMethodVersion);
+    REGISTER_API(RegisterDefragFunc);
+    REGISTER_API(DefragAlloc);
+    REGISTER_API(DefragRedisModuleString);
+    REGISTER_API(DefragShouldStop);
+    REGISTER_API(DefragCursorSet);
+    REGISTER_API(DefragCursorGet);
 }

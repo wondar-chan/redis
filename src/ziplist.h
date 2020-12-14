@@ -44,11 +44,15 @@ unsigned int ziplistGet(unsigned char *p, unsigned char **sval, unsigned int *sl
 unsigned char *ziplistInsert(unsigned char *zl, unsigned char *p, unsigned char *s, unsigned int slen);  // 插入
 unsigned char *ziplistDelete(unsigned char *zl, unsigned char **p); // 删除  
 unsigned char *ziplistDeleteRange(unsigned char *zl, int index, unsigned int num); // 删除某个下标区间内的节点 
-unsigned int ziplistCompare(unsigned char *p, unsigned char *s, unsigned int slen);  // 比较两个节点的大小 
-unsigned char *ziplistFind(unsigned char *p, unsigned char *vstr, unsigned int vlen, unsigned int skip); // 找到某个特定值的节点
+unsigned int ziplistCompare(unsigned char *p, unsigned char *s, unsigned int slen);  // 比较两个节点的大小  
+unsigned char *ziplistFind(unsigned char *zl, unsigned char *p, unsigned char *vstr, unsigned int vlen, unsigned int skip); // 找到某个特定值的节点
+ 
 unsigned int ziplistLen(unsigned char *zl);  // ziplist的长度  
 size_t ziplistBlobLen(unsigned char *zl);  // ziplist的存储空间大小 
 void ziplistRepr(unsigned char *zl);   // 
+typedef int (*ziplistValidateEntryCB)(unsigned char* p, void* userdata);
+int ziplistValidateIntegrity(unsigned char *zl, size_t size, int deep,
+                             ziplistValidateEntryCB entry_cb, void *cb_userdata);
 
 #ifdef REDIS_TEST
 int ziplistTest(int argc, char *argv[]);

@@ -64,7 +64,8 @@ typedef struct dictType {
     void *(*valDup)(void *privdata, const void *obj);  // 对val进行拷贝
     int (*keyCompare)(void *privdata, const void *key1, const void *key2); // 两个key的对比函数
     void (*keyDestructor)(void *privdata, void *key); // key的销毁
-    void (*valDestructor)(void *privdata, void *obj); // val的销毁 
+    void (*valDestructor)(void *privdata, void *obj); // val的销毁
+    int (*expandAllowed)(size_t moreMem, double usedRatio); 
 } dictType;
 
 /*  保存每个hashtable的数据信息，当前大小 hash掩码 使用量 */
@@ -150,6 +151,7 @@ typedef void (dictScanBucketFunction)(void *privdata, dictEntry **bucketref);
 /* dict所有的API */
 dict *dictCreate(dictType *type, void *privDataPtr);  // 创建dict 
 int dictExpand(dict *d, unsigned long size);  // 扩缩容
+int dictTryExpand(dict *d, unsigned long size);
 int dictAdd(dict *d, void *key, void *val);  // 添加k-v
 dictEntry *dictAddRaw(dict *d, void *key, dictEntry **existing); // 添加的key对应的dictEntry 
 dictEntry *dictAddOrFind(dict *d, void *key); // 添加或者查找 

@@ -56,6 +56,7 @@
 #include <sys/utsname.h>
 #include <locale.h>
 #include <sys/socket.h>
+#include <sys/resource.h>
 
 /* Our shared "common" objects */
 
@@ -919,7 +920,7 @@ struct redisCommand redisCommandTable[] = {
 
     /* GEORADIUS has store options that may write. */
     {"georadius",georadiusCommand,-6,
-     "write @geo",
+     "write use-memory @geo",
      0,georadiusGetKeys,1,1,1,0,0,0},
 
     {"georadius_ro",georadiusroCommand,-6,
@@ -927,7 +928,7 @@ struct redisCommand redisCommandTable[] = {
      0,georadiusGetKeys,1,1,1,0,0,0},
 
     {"georadiusbymember",georadiusbymemberCommand,-5,
-     "write @geo",
+     "write use-memory @geo",
      0,georadiusGetKeys,1,1,1,0,0,0},
 
     {"georadiusbymember_ro",georadiusbymemberroCommand,-5,
@@ -945,6 +946,14 @@ struct redisCommand redisCommandTable[] = {
     {"geodist",geodistCommand,-4,
      "read-only @geo",
      0,NULL,1,1,1,0,0,0},
+
+    {"geosearch",geosearchCommand,-7,
+     "read-only @geo",
+      0,NULL,1,1,1,0,0,0},
+
+    {"geosearchstore",geosearchstoreCommand,-8,
+     "write use-memory @geo",
+      0,NULL,1,2,1,0,0,0},
 
     {"pfselftest",pfselftestCommand,1,
      "admin @hyperloglog",
@@ -1298,6 +1307,20 @@ uint64_t dictEncObjHash(const void *key) {
     }
 }
 
+/* Return 1 if currently we allow dict to expand. Dict may allocate huge
+ * memory to contain hash buckets when dict expands, that may lead redis
+ * rejects user's requests or evicts some keys, we can stop dict to expand
+ * provisionally if used memory will be over maxmemory after dict expands,
+ * but to guarantee the performance of redis, we still allow dict to expand
+ * if dict load factor exceeds HASHTABLE_MAX_LOAD_FACTOR. */
+int dictExpandAllowed(size_t moreMem, double usedRatio) {
+    if (usedRatio <= HASHTABLE_MAX_LOAD_FACTOR) {
+        return !overMaxmemoryAfterAlloc(moreMem);
+    } else {
+        return 1;
+    }
+}
+
 /* Generic hash table type where keys are Redis Objects, Values
  * dummy pointers. */
 dictType objectKeyPointerValueDictType = {
@@ -1306,7 +1329,8 @@ dictType objectKeyPointerValueDictType = {
     NULL,                      /* val dup */
     dictEncObjKeyCompare,      /* key compare */
     dictObjectDestructor,      /* key destructor */
-    NULL                       /* val destructor */
+    NULL,                      /* val destructor */
+    NULL                       /* allow to expand */
 };
 
 /* Like objectKeyPointerValueDictType(), but values can be destroyed, if
@@ -1317,7 +1341,8 @@ dictType objectKeyHeapPointerValueDictType = {
     NULL,                      /* val dup */
     dictEncObjKeyCompare,      /* key compare */
     dictObjectDestructor,      /* key destructor */
-    dictVanillaFree            /* val destructor */
+    dictVanillaFree,           /* val destructor */
+    NULL                       /* allow to expand */
 };
 
 /* Set dictionary type. Keys are SDS strings, values are not used. */
@@ -1337,7 +1362,8 @@ dictType zsetDictType = {
     NULL,                      /* val dup */
     dictSdsKeyCompare,         /* key compare */
     NULL,                      /* Note: SDS string shared & freed by skiplist */
-    NULL                       /* val destructor */
+    NULL,                      /* val destructor */
+    NULL                       /* allow to expand */
 };
 
 /* Db->dict, keys are sds strings, vals are Redis objects. */
@@ -1347,7 +1373,8 @@ dictType dbDictType = {
     NULL,                       /* val dup */
     dictSdsKeyCompare,          /* key compare */
     dictSdsDestructor,          /* key destructor */
-    dictObjectDestructor   /* val destructor */
+    dictObjectDestructor,       /* val destructor */
+    dictExpandAllowed           /* allow to expand */
 };
 
 /* server.lua_scripts sha (as sds string) -> scripts (as robj) cache. */
@@ -1357,17 +1384,19 @@ dictType shaScriptObjectDictType = {
     NULL,                       /* val dup */
     dictSdsKeyCaseCompare,      /* key compare */
     dictSdsDestructor,          /* key destructor */
-    dictObjectDestructor        /* val destructor */
+    dictObjectDestructor,       /* val destructor */
+    NULL                        /* allow to expand */
 };
 
 /* Db->expires */
-dictType keyptrDictType = {
+dictType dbExpiresDictType = {
     dictSdsHash,                /* hash function */
     NULL,                       /* key dup */
     NULL,                       /* val dup */
     dictSdsKeyCompare,          /* key compare */
     NULL,                       /* key destructor */
-    NULL                        /* val destructor */
+    NULL,                       /* val destructor */
+    dictExpandAllowed           /* allow to expand */
 };
 
 /* Command table. sds string -> command struct pointer. */
@@ -1377,7 +1406,8 @@ dictType commandTableDictType = {
     NULL,                       /* val dup */
     dictSdsKeyCaseCompare,      /* key compare */
     dictSdsDestructor,          /* key destructor */
-    NULL                        /* val destructor */
+    NULL,                       /* val destructor */
+    NULL                        /* allow to expand */
 };
 
 /* Hash type hash table (note that small hashes are represented with ziplists) */
@@ -1387,7 +1417,8 @@ dictType hashDictType = {
     NULL,                       /* val dup */
     dictSdsKeyCompare,          /* key compare */
     dictSdsDestructor,          /* key destructor */
-    dictSdsDestructor           /* val destructor */
+    dictSdsDestructor,          /* val destructor */
+    NULL                        /* allow to expand */
 };
 
 /* Keylist hash table type has unencoded redis objects as keys and
@@ -1399,7 +1430,8 @@ dictType keylistDictType = {
     NULL,                       /* val dup */
     dictObjKeyCompare,          /* key compare */
     dictObjectDestructor,       /* key destructor */
-    dictListDestructor          /* val destructor */
+    dictListDestructor,         /* val destructor */
+    NULL                        /* allow to expand */
 };
 
 /* Cluster nodes hash table, mapping nodes addresses 1.2.3.4:6379 to
@@ -1410,7 +1442,8 @@ dictType clusterNodesDictType = {
     NULL,                       /* val dup */
     dictSdsKeyCompare,          /* key compare */
     dictSdsDestructor,          /* key destructor */
-    NULL                        /* val destructor */
+    NULL,                       /* val destructor */
+    NULL                        /* allow to expand */
 };
 
 /* Cluster re-addition blacklist. This maps node IDs to the time
@@ -1422,7 +1455,8 @@ dictType clusterNodesBlackListDictType = {
     NULL,                       /* val dup */
     dictSdsKeyCaseCompare,      /* key compare */
     dictSdsDestructor,          /* key destructor */
-    NULL                        /* val destructor */
+    NULL,                       /* val destructor */
+    NULL                        /* allow to expand */
 };
 
 /* Modules system dictionary type. Keys are module name,
@@ -1433,7 +1467,8 @@ dictType modulesDictType = {
     NULL,                       /* val dup */
     dictSdsKeyCaseCompare,      /* key compare */
     dictSdsDestructor,          /* key destructor */
-    NULL                        /* val destructor */
+    NULL,                       /* val destructor */
+    NULL                        /* allow to expand */
 };
 
 /* Migrate cache dict type. */
@@ -1443,7 +1478,8 @@ dictType migrateCacheDictType = {
     NULL,                       /* val dup */
     dictSdsKeyCompare,          /* key compare */
     dictSdsDestructor,          /* key destructor */
-    NULL                        /* val destructor */
+    NULL,                       /* val destructor */
+    NULL                        /* allow to expand */
 };
 
 /* Replication cached script dict (server.repl_scriptcache_dict).
@@ -1455,7 +1491,8 @@ dictType replScriptCacheDictType = {
     NULL,                       /* val dup */
     dictSdsKeyCaseCompare,      /* key compare */
     dictSdsDestructor,          /* key destructor */
-    NULL                        /* val destructor */
+    NULL,                       /* val destructor */
+    NULL                        /* allow to expand */
 };
 
 int htNeedsResize(dict *dict) {
@@ -2494,6 +2531,7 @@ void initServerConfig(void) {
     server.tlsfd_count = 0;
     server.sofd = -1;
     server.active_expire_enabled = 1;
+    server.skip_checksum_validation = 0;
     server.client_max_querybuf_len = PROTO_MAX_QUERYBUF_LEN;
     server.saveparams = NULL;
     server.loading = 0;
@@ -2904,6 +2942,7 @@ void resetServerStats(void) {
     server.stat_active_defrag_scanned = 0;
     server.stat_fork_time = 0;
     server.stat_fork_rate = 0;
+    server.stat_total_forks = 0;
     server.stat_rejected_conn = 0;
     server.stat_sync_full = 0;
     server.stat_sync_partial_ok = 0;
@@ -2922,6 +2961,7 @@ void resetServerStats(void) {
     atomicSet(server.stat_net_input_bytes, 0);
     atomicSet(server.stat_net_output_bytes, 0);
     server.stat_unexpected_error_replies = 0;
+    server.stat_dump_payload_sanitizations = 0;
     server.aof_delayed_fsync = 0;
     server.blocked_last_cron = 0;
 }
@@ -3020,7 +3060,7 @@ void initServer(void) {
     /* Create the Redis databases, and initialize other internal state. */
     for (j = 0; j < server.dbnum; j++) {
         server.db[j].dict = dictCreate(&dbDictType,NULL);
-        server.db[j].expires = dictCreate(&keyptrDictType,NULL);
+        server.db[j].expires = dictCreate(&dbExpiresDictType,NULL);
         server.db[j].expires_cursor = 0;
         server.db[j].blocking_keys = dictCreate(&keylistDictType,NULL);
         server.db[j].ready_keys = dictCreate(&objectKeyPointerValueDictType,NULL);
@@ -3037,6 +3077,9 @@ void initServer(void) {
     listSetFreeMethod(server.pubsub_patterns,freePubsubPattern);
     listSetMatchMethod(server.pubsub_patterns,listMatchPubsubPattern);
     server.cronloops = 0;
+    server.in_eval = 0;
+    server.in_exec = 0;
+    server.propagate_in_transaction = 0;
     server.rdb_child_pid = -1;
     server.aof_child_pid = -1;
     server.module_child_pid = -1;
@@ -4266,7 +4309,6 @@ sds genRedisInfoString(const char *section) {
     sds info = sdsempty();
     time_t uptime = server.unixtime-server.stat_starttime;
     int j;
-    struct rusage self_ru, c_ru;
     int allsections = 0, defsections = 0, everything = 0, modules = 0;
     int sections = 0;
 
@@ -4276,9 +4318,6 @@ sds genRedisInfoString(const char *section) {
     everything = strcasecmp(section,"everything") == 0;
     modules = strcasecmp(section,"modules") == 0;
     if (everything) allsections = 1;
-
-    getrusage(RUSAGE_SELF, &self_ru);
-    getrusage(RUSAGE_CHILDREN, &c_ru);
 
     /* Server */
     if (allsections || defsections || !strcasecmp(section,"server")) {
@@ -4325,6 +4364,7 @@ sds genRedisInfoString(const char *section) {
             "process_supervised:%s\r\n"
             "run_id:%s\r\n"
             "tcp_port:%i\r\n"
+            "server_time_usec:%I\r\n"
             "uptime_in_seconds:%I\r\n"
             "uptime_in_days:%I\r\n"
             "hz:%i\r\n"
@@ -4351,6 +4391,7 @@ sds genRedisInfoString(const char *section) {
             supervised,
             server.runid,
             server.port ? server.port : server.tls_port,
+            (int64_t)server.ustime,
             (int64_t)uptime,
             (int64_t)(uptime/(3600*24)),
             server.hz,
@@ -4643,6 +4684,7 @@ sds genRedisInfoString(const char *section) {
             "pubsub_channels:%ld\r\n"
             "pubsub_patterns:%lu\r\n"
             "latest_fork_usec:%lld\r\n"
+            "total_forks:%lld\r\n"
             "migrate_cached_sockets:%ld\r\n"
             "slave_expires_tracked_keys:%zu\r\n"
             "active_defrag_hits:%lld\r\n"
@@ -4653,6 +4695,7 @@ sds genRedisInfoString(const char *section) {
             "tracking_total_items:%lld\r\n"
             "tracking_total_prefixes:%lld\r\n"
             "unexpected_error_replies:%lld\r\n"
+            "dump_payload_sanitizations:%lld\r\n"
             "total_reads_processed:%lld\r\n"
             "total_writes_processed:%lld\r\n"
             "io_threaded_reads_processed:%lld\r\n"
@@ -4678,6 +4721,7 @@ sds genRedisInfoString(const char *section) {
             dictSize(server.pubsub_channels),
             listLength(server.pubsub_patterns),
             server.stat_fork_time,
+            server.stat_total_forks,
             dictSize(server.migrate_cached_sockets),
             getSlaveKeyWithExpireCount(),
             server.stat_active_defrag_hits,
@@ -4688,6 +4732,7 @@ sds genRedisInfoString(const char *section) {
             (unsigned long long) trackingGetTotalItems(),
             (unsigned long long) trackingGetTotalPrefixes(),
             server.stat_unexpected_error_replies,
+            server.stat_dump_payload_sanitizations,
             stat_total_reads_processed,
             stat_total_writes_processed,
             server.stat_io_reads_processed,
@@ -4834,6 +4879,10 @@ sds genRedisInfoString(const char *section) {
     /* CPU */
     if (allsections || defsections || !strcasecmp(section,"cpu")) {
         if (sections++) info = sdscat(info,"\r\n");
+
+        struct rusage self_ru, c_ru;
+        getrusage(RUSAGE_SELF, &self_ru);
+        getrusage(RUSAGE_CHILDREN, &c_ru);
         info = sdscatprintf(info,
         "# CPU\r\n"
         "used_cpu_sys:%ld.%06ld\r\n"
@@ -4844,6 +4893,15 @@ sds genRedisInfoString(const char *section) {
         (long)self_ru.ru_utime.tv_sec, (long)self_ru.ru_utime.tv_usec,
         (long)c_ru.ru_stime.tv_sec, (long)c_ru.ru_stime.tv_usec,
         (long)c_ru.ru_utime.tv_sec, (long)c_ru.ru_utime.tv_usec);
+#ifdef RUSAGE_THREAD
+        struct rusage m_ru;
+        getrusage(RUSAGE_THREAD, &m_ru);
+        info = sdscatprintf(info,
+            "used_cpu_sys_main_thread:%ld.%06ld\r\n"
+            "used_cpu_user_main_thread:%ld.%06ld\r\n",
+            (long)m_ru.ru_stime.tv_sec, (long)m_ru.ru_stime.tv_usec,
+            (long)m_ru.ru_utime.tv_sec, (long)m_ru.ru_utime.tv_usec);
+#endif  /* RUSAGE_THREAD */
     }
 
     /* Modules */
@@ -5175,6 +5233,7 @@ int redisFork(int purpose) {
         closeClildUnusedResourceAfterFork();
     } else {
         /* 父进程 */
+        server.stat_total_forks++;
         server.stat_fork_time = ustime()-start;
         server.stat_fork_rate = (double) zmalloc_used_memory() * 1000000 / server.stat_fork_time / (1024*1024*1024); /* GB per second. */
         latencyAddSampleIfNeeded("fork",server.stat_fork_time/1000);

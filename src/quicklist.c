@@ -35,9 +35,11 @@
 #include <string.h> /* for memcpy */
 #include "quicklist.h"
 #include "zmalloc.h"
+#include "config.h"
 #include "ziplist.h"
 #include "util.h" /* for ll2string */
 #include "lzf.h"
+#include "redisassert.h"
 
 #if defined(REDIS_TEST) || defined(REDIS_TEST_VERBOSE)
 #include <stdio.h> /* for printf (debug printing), snprintf (genstr) */
@@ -90,14 +92,6 @@ void _quicklistBookmarkDelete(quicklist *ql, quicklistBookmark *bm);
         (e)->offset = 123456789;                                               \
         (e)->sz = 0;                                                           \
     } while (0)
-
-#if __GNUC__ >= 3
-#define likely(x) __builtin_expect(!!(x), 1)
-#define unlikely(x) __builtin_expect(!!(x), 0)
-#else
-#define likely(x) (x)
-#define unlikely(x) (x)
-#endif
 
 /* 创建一个新的quicklist.
  * 使用quicklistRelease()释放quicklist. */
@@ -1286,7 +1280,8 @@ int quicklistIndex(const quicklist *quicklist, const long long idx,
 
     quicklistDecompressNodeForUse(entry->node);
     entry->zi = ziplistIndex(entry->node->zl, entry->offset);
-    ziplistGet(entry->zi, &entry->value, &entry->sz, &entry->longval);
+    if (!ziplistGet(entry->zi, &entry->value, &entry->sz, &entry->longval))
+        assert(0); /* This can happen on corrupt ziplist with fake entry count. */
     /* The caller will use our result, so we don't re-compress here.
      * The caller can recompress or delete the node as needed. */
     return 1;
