@@ -33,10 +33,13 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include <stdint.h>
-
 #ifndef __DICT_H
 #define __DICT_H
+
+#include "mt19937-64.h"
+#include <limits.h>
+#include <stdint.h>
+#include <stdlib.h>
 
 #define DICT_OK 0
 #define DICT_ERR 1
@@ -148,6 +151,12 @@ typedef void (dictScanBucketFunction)(void *privdata, dictEntry **bucketref);
 #define dictSize(d) ((d)->ht[0].used+(d)->ht[1].used)
 #define dictIsRehashing(d) ((d)->rehashidx != -1)
 
+/* If our unsigned long type can store a 64 bit number, use a 64 bit PRNG. */
+#if ULONG_MAX >= 0xffffffffffffffff
+#define randomULong() ((unsigned long) genrand64_int64())
+#else
+#define randomULong() random()
+#endif
 /* dict所有的API */
 dict *dictCreate(dictType *type, void *privDataPtr);  // 创建dict 
 int dictExpand(dict *d, unsigned long size);  // 扩缩容

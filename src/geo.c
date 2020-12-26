@@ -100,8 +100,8 @@ int extractLongLatOrReply(client *c, robj **argv, double *xy) {
     }
     if (xy[0] < GEO_LONG_MIN || xy[0] > GEO_LONG_MAX ||
         xy[1] < GEO_LAT_MIN  || xy[1] > GEO_LAT_MAX) {
-        addReplySds(c, sdscatprintf(sdsempty(),
-            "-ERR invalid longitude,latitude pair %f,%f\r\n",xy[0],xy[1]));
+        addReplyErrorFormat(c,
+            "-ERR invalid longitude,latitude pair %f,%f\r\n",xy[0],xy[1]);
         return C_ERR;
     }
     return C_OK;
@@ -488,9 +488,9 @@ void geoaddCommand(client *c) {
 /* GEORADIUS key x y radius unit [WITHDIST] [WITHHASH] [WITHCOORD] [ASC|DESC]
  *                               [COUNT count] [STORE key] [STOREDIST key]
  * GEORADIUSBYMEMBER key member radius unit ... options ...
- * GEOSEARCH key [FROMMEMBER member] [FORMLOG long lat] [BYRADIUS radius unit]
+ * GEOSEARCH key [FROMMEMBER member] [FROMLONLAT long lat] [BYRADIUS radius unit]
  *               [BYBOX width height unit] [WITHCORD] [WITHDIST] [WITHASH] [COUNT count] [ASC|DESC]
- * GEOSEARCHSTORE dest_key src_key [FROMMEMBER member] [FORMLOG long lat] [BYRADIUS radius unit]
+ * GEOSEARCHSTORE dest_key src_key [FROMMEMBER member] [FROMLONLAT long lat] [BYRADIUS radius unit]
  *               [BYBOX width height unit] [WITHCORD] [WITHDIST] [WITHASH] [COUNT count] [ASC|DESC] [STOREDIST]
  *  */
 void georadiusGeneric(client *c, int srcKeyIndex, int flags) {
@@ -591,7 +591,7 @@ void georadiusGeneric(client *c, int srcKeyIndex, int flags) {
                 }
                 frommember = 1;
                 i++;
-            } else if (!strcasecmp(arg, "fromloc") &&
+            } else if (!strcasecmp(arg, "fromlonlat") &&
                        (i+2) < remaining &&
                        flags & GEOSEARCH &&
                        !frommember)
@@ -620,7 +620,7 @@ void georadiusGeneric(client *c, int srcKeyIndex, int flags) {
                 bybox = 1;
                 i += 3;
             } else {
-                addReply(c, shared.syntaxerr);
+                addReplyErrorObject(c,shared.syntaxerr);
                 return;
             }
         }
@@ -635,12 +635,16 @@ void georadiusGeneric(client *c, int srcKeyIndex, int flags) {
     }
 
     if ((flags & GEOSEARCH) && !(frommember || fromloc)) {
-        addReplyErrorFormat(c, "exactly one of FROMMEMBER or FROMLOC can be specified for %s", (char *)c->argv[0]->ptr);
+        addReplyErrorFormat(c,
+            "exactly one of FROMMEMBER or FROMLONLAT can be specified for %s",
+            (char *)c->argv[0]->ptr);
         return;
     }
 
     if ((flags & GEOSEARCH) && !(byradius || bybox)) {
-        addReplyErrorFormat(c, "exactly one of BYRADIUS and BYBOX can be specified for %s", (char *)c->argv[0]->ptr);
+        addReplyErrorFormat(c,
+            "exactly one of BYRADIUS and BYBOX can be specified for %s",
+            (char *)c->argv[0]->ptr);
         return;
     }
 
@@ -898,7 +902,7 @@ void geodistCommand(client *c) {
         to_meter = extractUnitOrReply(c,c->argv[4]);
         if (to_meter < 0) return;
     } else if (c->argc > 5) {
-        addReply(c,shared.syntaxerr);
+        addReplyErrorObject(c,shared.syntaxerr);
         return;
     }
 

@@ -1686,7 +1686,7 @@ void zaddGenericCommand(client *c, int flags) {
      * we expect any number of score-element pairs. */
     elements = c->argc-scoreidx;
     if (elements % 2 || !elements) {
-        addReply(c,shared.syntaxerr);
+        addReplyErrorObject(c,shared.syntaxerr);
         return;
     }
     elements /= 2; /* Now this holds the number of score-element pairs. */
@@ -2511,7 +2511,7 @@ void zunionInterDiffGenericCommand(client *c, robj *dstkey, int numkeysIndex, in
 
     /* test if the expected number of keys would overflow */
     if (setnum > (c->argc-(numkeysIndex+1))) {
-        addReply(c,shared.syntaxerr);
+        addReplyErrorObject(c,shared.syntaxerr);
         return;
     }
 
@@ -2522,7 +2522,7 @@ void zunionInterDiffGenericCommand(client *c, robj *dstkey, int numkeysIndex, in
         if (obj != NULL) {
             if (obj->type != OBJ_ZSET && obj->type != OBJ_SET) {
                 zfree(src);
-                addReply(c,shared.wrongtypeerr);
+                addReplyErrorObject(c,shared.wrongtypeerr);
                 return;
             }
 
@@ -2568,7 +2568,7 @@ void zunionInterDiffGenericCommand(client *c, robj *dstkey, int numkeysIndex, in
                     aggregate = REDIS_AGGR_MAX;
                 } else {
                     zfree(src);
-                    addReply(c,shared.syntaxerr);
+                    addReplyErrorObject(c,shared.syntaxerr);
                     return;
                 }
                 j++; remaining--;
@@ -2580,7 +2580,7 @@ void zunionInterDiffGenericCommand(client *c, robj *dstkey, int numkeysIndex, in
                 withscores = 1;
             } else {
                 zfree(src);
-                addReply(c,shared.syntaxerr);
+                addReplyErrorObject(c,shared.syntaxerr);
                 return;
             }
         }
@@ -2779,7 +2779,7 @@ void zrangeGenericCommand(client *c, int reverse) {
     if (c->argc == 5 && !strcasecmp(c->argv[4]->ptr,"withscores")) {
         withscores = 1;
     } else if (c->argc >= 5) {
-        addReply(c,shared.syntaxerr);
+        addReplyErrorObject(c,shared.syntaxerr);
         return;
     }
 
@@ -2924,7 +2924,7 @@ void genericZrangebyscoreCommand(client *c, int reverse) {
                 }
                 pos += 3; remaining -= 3;
             } else {
-                addReply(c,shared.syntaxerr);
+                addReplyErrorObject(c,shared.syntaxerr);
                 return;
             }
         }
@@ -3275,7 +3275,7 @@ void genericZrangebylexCommand(client *c, int reverse) {
                 pos += 3; remaining -= 3;
             } else {
                 zslFreeLexRange(&range);
-                addReply(c,shared.syntaxerr);
+                addReplyErrorObject(c,shared.syntaxerr);
                 return;
             }
         }
@@ -3618,7 +3618,7 @@ void genericZpopCommand(client *c, robj **keyv, int keyc, int where, int emitkey
 /* ZPOPMIN key [<count>] */
 void zpopminCommand(client *c) {
     if (c->argc > 3) {
-        addReply(c,shared.syntaxerr);
+        addReplyErrorObject(c,shared.syntaxerr);
         return;
     }
     genericZpopCommand(c,&c->argv[1],1,ZSET_MIN,0,
@@ -3628,7 +3628,7 @@ void zpopminCommand(client *c) {
 /* ZMAXPOP key [<count>] */
 void zpopmaxCommand(client *c) {
     if (c->argc > 3) {
-        addReply(c,shared.syntaxerr);
+        addReplyErrorObject(c,shared.syntaxerr);
         return;
     }
     genericZpopCommand(c,&c->argv[1],1,ZSET_MAX,0,

@@ -34,6 +34,7 @@
 #include "bio.h"
 #include "latency.h"
 #include "atomicvar.h"
+#include "mt19937-64.h"
 
 #include <time.h>
 #include <signal.h>
@@ -115,9 +116,9 @@ struct redisServer server; /* Server global state */
  *
  * write:       Write command (may modify the key space).
  *
- * read-only:   All the non special commands just reading from keys without
- *              changing the content, or returning other information like
- *              the TIME command. Special commands such administrative commands
+ * read-only:   Commands just reading from keys without changing the content.
+ *              Note that commands that don't read from the keyspace such as
+ *              TIME, SELECT, INFO, administrative commands, and connection
  *              or transaction related commands (multi, exec, discard, ...)
  *              are not flagged as read-only commands, since they affect the
  *              server or the connection in other ways.
@@ -287,11 +288,11 @@ struct redisCommand redisCommandTable[] = {
      "write use-memory @list",
      0,NULL,1,1,1,0,0,0},
 
-    {"rpop",rpopCommand,2,
+    {"rpop",rpopCommand,-2,
      "write fast @list",
      0,NULL,1,1,1,0,0,0},
 
-    {"lpop",lpopCommand,2,
+    {"lpop",lpopCommand,-2,
      "write fast @list",
      0,NULL,1,1,1,0,0,0},
 
@@ -685,7 +686,7 @@ struct redisCommand redisCommandTable[] = {
      0,NULL,0,0,0,0,0,0},
 
     {"echo",echoCommand,2,
-     "read-only fast @connection",
+     "fast @connection",
      0,NULL,0,0,0,0,0,0},
 
     {"save",saveCommand,1,
@@ -705,7 +706,7 @@ struct redisCommand redisCommandTable[] = {
      0,NULL,0,0,0,0,0,0},
 
     {"lastsave",lastsaveCommand,1,
-     "read-only random fast ok-loading ok-stale @admin @dangerous",
+     "random fast ok-loading ok-stale @admin @dangerous",
      0,NULL,0,0,0,0,0,0},
 
     {"type",typeCommand,2,
@@ -781,7 +782,7 @@ struct redisCommand redisCommandTable[] = {
      0,NULL,0,0,0,0,0,0},
 
     {"role",roleCommand,1,
-     "ok-loading ok-stale no-script fast read-only @dangerous",
+     "ok-loading ok-stale no-script fast @dangerous",
      0,NULL,0,0,0,0,0,0},
 
     {"debug",debugCommand,-2,
@@ -891,7 +892,7 @@ struct redisCommand redisCommandTable[] = {
      0,NULL,0,0,0,0,0,0},
 
     {"time",timeCommand,1,
-     "read-only random fast ok-loading ok-stale",
+     "random fast ok-loading ok-stale",
      0,NULL,0,0,0,0,0,0},
 
     {"bitop",bitopCommand,-4,
@@ -975,9 +976,12 @@ struct redisCommand redisCommandTable[] = {
      "write use-memory @hyperloglog",
      0,NULL,1,-1,1,0,0,0},
 
+    /* Unlike PFCOUNT that is considered as a read-only command (although
+     * it changes a bit), PFDEBUG may change the entire key when converting
+     * from sparse to dense representation */
     {"pfdebug",pfdebugCommand,-3,
-     "admin write",
-     0,NULL,0,0,0,0,0,0},
+     "admin write use-memory @hyperloglog",
+     0,NULL,2,2,1,0,0,0},
 
     {"xadd",xaddCommand,-5,
      "write use-memory fast random @stream",
@@ -1059,7 +1063,7 @@ struct redisCommand redisCommandTable[] = {
      "read-only @string",
      0,lcsGetKeys,0,0,0,0,0,0},
 
-    {"reset",resetCommand,-1,
+    {"reset",resetCommand,1,
      "no-script ok-stale ok-loading fast @connection",
      0,NULL,0,0,0,0,0,0}
 };
@@ -2392,9 +2396,9 @@ void afterSleep(struct aeEventLoop *eventLoop) {
 void createSharedObjects(void) {
     int j;
 
+    /* Shared command responses */
     shared.crlf = createObject(OBJ_STRING,sdsnew("\r\n"));
     shared.ok = createObject(OBJ_STRING,sdsnew("+OK\r\n"));
-    shared.err = createObject(OBJ_STRING,sdsnew("-ERR\r\n"));
     shared.emptybulk = createObject(OBJ_STRING,sdsnew("$0\r\n\r\n"));
     shared.czero = createObject(OBJ_STRING,sdsnew(":0\r\n"));
     shared.cone = createObject(OBJ_STRING,sdsnew(":1\r\n"));
@@ -2402,8 +2406,14 @@ void createSharedObjects(void) {
     shared.pong = createObject(OBJ_STRING,sdsnew("+PONG\r\n"));
     shared.queued = createObject(OBJ_STRING,sdsnew("+QUEUED\r\n"));
     shared.emptyscan = createObject(OBJ_STRING,sdsnew("*2\r\n$1\r\n0\r\n*0\r\n"));
+    shared.space = createObject(OBJ_STRING,sdsnew(" "));
+    shared.colon = createObject(OBJ_STRING,sdsnew(":"));
+    shared.plus = createObject(OBJ_STRING,sdsnew("+"));
+
+    /* Shared command error responses */
     shared.wrongtypeerr = createObject(OBJ_STRING,sdsnew(
         "-WRONGTYPE Operation against a key holding the wrong kind of value\r\n"));
+    shared.err = createObject(OBJ_STRING,sdsnew("-ERR\r\n"));
     shared.nokeyerr = createObject(OBJ_STRING,sdsnew(
         "-ERR no such key\r\n"));
     shared.syntaxerr = createObject(OBJ_STRING,sdsnew(
@@ -2434,9 +2444,6 @@ void createSharedObjects(void) {
         "-NOREPLICAS Not enough good replicas to write.\r\n"));
     shared.busykeyerr = createObject(OBJ_STRING,sdsnew(
         "-BUSYKEY Target key name already exists.\r\n"));
-    shared.space = createObject(OBJ_STRING,sdsnew(" "));
-    shared.colon = createObject(OBJ_STRING,sdsnew(":"));
-    shared.plus = createObject(OBJ_STRING,sdsnew("+"));
 
     /* The shared NULL depends on the protocol version. */
     shared.null[0] = NULL;
@@ -3393,6 +3400,14 @@ struct redisCommand *lookupCommandOrOriginal(sds name) {
 void propagate(struct redisCommand *cmd, int dbid, robj **argv, int argc,
                int flags)
 {
+    /* Propagate a MULTI request once we encounter the first command which
+     * is a write command.
+     * This way we'll deliver the MULTI/..../EXEC block as a whole and
+     * both the AOF and the replication link will have the same consistency
+     * and atomicity guarantees. */
+    if (server.in_exec && !server.propagate_in_transaction)
+        execCommandPropagateMulti(dbid);
+
     if (server.aof_state != AOF_OFF && flags & PROPAGATE_AOF)
         feedAppendOnlyFile(cmd,dbid,argv,argc);
     if (flags & PROPAGATE_REPL)
@@ -3624,7 +3639,7 @@ void call(client *c, int flags) {
                 !(c->flags & CLIENT_MULTI) &&
                 !(flags & CMD_CALL_NOWRAP))
             {
-                execCommandPropagateMulti(c);
+                execCommandPropagateMulti(c->db->id);
                 multi_emitted = 1;
             }
 
@@ -3639,7 +3654,7 @@ void call(client *c, int flags) {
             }
 
             if (multi_emitted) {
-                execCommandPropagateExec(c);
+                execCommandPropagateExec(c->db->id);
             }
         }
         redisOpArrayFree(&server.also_propagate);
@@ -4974,7 +4989,7 @@ void infoCommand(client *c) {
     char *section = c->argc == 2 ? c->argv[1]->ptr : "default";
 
     if (c->argc > 2) {
-        addReply(c,shared.syntaxerr);
+        addReplyErrorObject(c,shared.syntaxerr);
         return;
     }
     sds info = genRedisInfoString(section);
@@ -5219,6 +5234,11 @@ void closeClildUnusedResourceAfterFork() {
     closeListeningSockets(0);
     if (server.cluster_enabled && server.cluster_config_file_lock_fd != -1)
         close(server.cluster_config_file_lock_fd);  /* don't care if this fails */
+
+    /* Clear server.pidfile, this is the parent pidfile which should not
+     * be touched (or deleted) by the child (on exit / crash) */
+    zfree(server.pidfile);
+    server.pidfile = NULL;
 }
 
 /* purpose is one of CHILD_TYPE_ types */
@@ -5466,6 +5486,7 @@ int main(int argc, char **argv) {
     srand(time(NULL)^getpid());
     srandom(time(NULL)^getpid());
     gettimeofday(&tv,NULL);
+    init_genrand64(((long long) tv.tv_sec * 1000000 + tv.tv_usec) ^ getpid());
     crc64_init();
 
     uint8_t hashseed[16];

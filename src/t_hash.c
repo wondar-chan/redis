@@ -651,7 +651,7 @@ void hsetCommand(client *c) {
     // key有变化，需要通知监听这个key的客户端 
     signalModifiedKey(c,c->db,c->argv[1]);
     notifyKeyspaceEvent(NOTIFY_HASH,"hset",c->argv[1],c->db->id);
-    server.dirty++;
+    server.dirty += (c->argc - 2)/2;
 }
 
 void hincrbyCommand(client *c) {

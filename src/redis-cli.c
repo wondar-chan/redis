@@ -62,6 +62,7 @@
 #include "anet.h"
 #include "ae.h"
 #include "cli_common.h"
+#include "mt19937-64.h"
 
 #define UNUSED(V) ((void) V)
 
@@ -5578,7 +5579,7 @@ static int clusterManagerCommandCreate(int argc, char **argv) {
         if (last > CLUSTER_MANAGER_SLOTS || i == (masters_count - 1))
             last = CLUSTER_MANAGER_SLOTS - 1;
         if (last < first) last = first;
-        printf("Master[%d] -> Slots %lu - %lu\n", i, first, last);
+        printf("Master[%d] -> Slots %ld - %ld\n", i, first, last);
         master->slots_count = 0;
         for (j = first; j <= last; j++) {
             master->slots[j] = 1;
@@ -8123,6 +8124,7 @@ static sds askPassword(const char *msg) {
 
 int main(int argc, char **argv) {
     int firstarg;
+    struct timeval tv;
 
     config.hostip = sdsnew("127.0.0.1");
     config.hostport = 6379;
@@ -8218,6 +8220,9 @@ int main(int argc, char **argv) {
         cliSecureInit();
     }
 #endif
+
+    gettimeofday(&tv, NULL);
+    init_genrand64(((long long) tv.tv_sec * 1000000 + tv.tv_usec) ^ getpid());
 
     /* Cluster Manager mode */
     if (CLUSTER_MANAGER_MODE()) {

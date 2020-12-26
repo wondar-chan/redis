@@ -3447,7 +3447,7 @@ numargserr:
 /* SENTINEL INFO [section] */
 void sentinelInfoCommand(client *c) {
     if (c->argc > 2) {
-        addReply(c,shared.syntaxerr);
+        addReplyErrorObject(c,shared.syntaxerr);
         return;
     }
 
@@ -3580,14 +3580,13 @@ void sentinelSetCommand(client *c) {
                     "Reconfiguration of scripts path is denied for "
                     "security reasons. Check the deny-scripts-reconfig "
                     "configuration directive in your Sentinel configuration");
-                return;
+                goto seterr;
             }
 
             if (strlen(value) && access(value,X_OK) == -1) {
                 addReplyError(c,
                     "Notification script seems non existing or non executable");
-                if (changes) sentinelFlushConfig();
-                return;
+                goto seterr;
             }
             sdsfree(ri->notification_script);
             ri->notification_script = strlen(value) ? sdsnew(value) : NULL;
@@ -3600,15 +3599,14 @@ void sentinelSetCommand(client *c) {
                     "Reconfiguration of scripts path is denied for "
                     "security reasons. Check the deny-scripts-reconfig "
                     "configuration directive in your Sentinel configuration");
-                return;
+                goto seterr;
             }
 
             if (strlen(value) && access(value,X_OK) == -1) {
                 addReplyError(c,
                     "Client reconfiguration script seems non existing or "
                     "non executable");
-                if (changes) sentinelFlushConfig();
-                return;
+                goto seterr;
             }
             sdsfree(ri->client_reconfig_script);
             ri->client_reconfig_script = strlen(value) ? sdsnew(value) : NULL;
@@ -3658,8 +3656,7 @@ void sentinelSetCommand(client *c) {
         } else {
             addReplyErrorFormat(c,"Unknown option or number of arguments for "
                                   "SENTINEL SET '%s'", option);
-            if (changes) sentinelFlushConfig();
-            return;
+            goto seterr;
         }
 
         /* Log the event. */
@@ -3685,9 +3682,11 @@ void sentinelSetCommand(client *c) {
     return;
 
 badfmt: /* Bad format errors */
-    if (changes) sentinelFlushConfig();
     addReplyErrorFormat(c,"Invalid argument '%s' for SENTINEL SET '%s'",
         (char*)c->argv[badarg]->ptr,option);
+seterr:
+    if (changes) sentinelFlushConfig();
+    return;
 }
 
 /* Our fake PUBLISH command: it is actually useful only to receive hello messages

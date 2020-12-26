@@ -259,8 +259,14 @@ int prepareClientToWrite(client *c) {
     if (!c->conn) return C_ERR; /* Fake client for AOF loading. */
 
     /* Schedule the client to write the output buffers to the socket, unless
-     * it should already be setup to do so (it has already pending data). */
-    if (!clientHasPendingReplies(c)) clientInstallWriteHandler(c);
+     * it should already be setup to do so (it has already pending data).
+     *
+     * If CLIENT_PENDING_READ is set, we're in an IO thread and should
+     * not install a write handler. Instead, it will be done by
+     * handleClientsWithPendingReadsUsingThreads() upon return.
+     */
+    if (!clientHasPendingReplies(c) && !(c->flags & CLIENT_PENDING_READ))
+            clientInstallWriteHandler(c);
 
     /* Authorize the caller to queue in the output buffer of this client. */
     return C_OK;
@@ -853,7 +859,7 @@ void addReplySubcommandSyntaxError(client *c) {
     sdsfree(cmd);
 }
 
-/* Append 'src' client output buffers into 'dst' client output buffers. 
+/* Append 'src' client output buffers into 'dst' client output buffers.
  * This function clears the output buffers of 'src' */
 void AddReplyFromClient(client *dst, client *src) {
     /* If the source client contains a partial response due to client output
@@ -1859,7 +1865,7 @@ int processMultibulkBuffer(client *c) {
                     c->qb_pos = 0;
                     /* Hint the sds library about the amount of bytes this string is
                      * going to contain. */
-                    c->querybuf = sdsMakeRoomFor(c->querybuf,ll+2);
+                    c->querybuf = sdsMakeRoomFor(c->querybuf,ll+2-sdslen(c->querybuf));
                 }
             }
             c->bulklen = ll;
@@ -2382,7 +2388,7 @@ void clientCommand(client *c) {
 "LIST [options ...]     -- Return information about client connections. Options:",
 "     TYPE (normal|master|replica|pubsub) -- Return clients of specified type.",
 "     ID id [id ...]                      -- Return clients of specified IDs only.",
-"PAUSE <timeout>        -- Suspend all Redis clients for <timout> milliseconds.",
+"PAUSE <timeout>        -- Suspend all Redis clients for <timeout> milliseconds.",
 "REPLY (on|off|skip)    -- Control the replies sent to the current connection.",
 "SETNAME <name>         -- Assign the name <name> to the current connection.",
 "UNBLOCK <clientid> [TIMEOUT|ERROR] -- Unblock the specified blocked client.",
@@ -2429,7 +2435,7 @@ NULL
                 }
             }
         } else if (c->argc != 2) {
-            addReply(c,shared.syntaxerr);
+            addReplyErrorObject(c,shared.syntaxerr);
             return;
         }
 
@@ -2448,7 +2454,7 @@ NULL
             if (!(c->flags & CLIENT_REPLY_OFF))
                 c->flags |= CLIENT_REPLY_SKIP_NEXT;
         } else {
-            addReply(c,shared.syntaxerr);
+            addReplyErrorObject(c,shared.syntaxerr);
             return;
         }
     } else if (!strcasecmp(c->argv[1]->ptr,"kill")) {
@@ -2504,17 +2510,17 @@ NULL
                     } else if (!strcasecmp(c->argv[i+1]->ptr,"no")) {
                         skipme = 0;
                     } else {
-                        addReply(c,shared.syntaxerr);
+                        addReplyErrorObject(c,shared.syntaxerr);
                         return;
                     }
                 } else {
-                    addReply(c,shared.syntaxerr);
+                    addReplyErrorObject(c,shared.syntaxerr);
                     return;
                 }
                 i += 2;
             }
         } else {
-            addReply(c,shared.syntaxerr);
+            addReplyErrorObject(c,shared.syntaxerr);
             return;
         }
 
@@ -2651,7 +2657,7 @@ NULL
                 prefix[numprefix++] = c->argv[j];
             } else {
                 zfree(prefix);
-                addReply(c,shared.syntaxerr);
+                addReplyErrorObject(c,shared.syntaxerr);
                 return;
             }
         }
@@ -2713,7 +2719,7 @@ NULL
             disableTracking(c);
         } else {
             zfree(prefix);
-            addReply(c,shared.syntaxerr);
+            addReplyErrorObject(c,shared.syntaxerr);
             return;
         }
         zfree(prefix);
@@ -2742,7 +2748,7 @@ NULL
                 return;
             }
         } else {
-            addReply(c,shared.syntaxerr);
+            addReplyErrorObject(c,shared.syntaxerr);
             return;
         }
 
@@ -3523,6 +3529,12 @@ int handleClientsWithPendingReadsUsingThreads(void) {
             }
         }
         processInputBuffer(c);
+
+        /* We may have pending replies if a thread readQueryFromClient() produced
+         * replies and did not install a write handler (it can't).
+         */
+        if (!(c->flags & CLIENT_PENDING_WRITE) && clientHasPendingReplies(c))
+            clientInstallWriteHandler(c);
     }
 
     /* Update processed count on server */
