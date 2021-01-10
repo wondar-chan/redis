@@ -436,7 +436,7 @@ void trimStringObjectIfNeeded(robj *o) {
     }
 }
 
-/* Try to encode a string object in order to save space */
+/* 将string类型的robj做特殊编码，以节省存储空间  */
 robj *tryObjectEncoding(robj *o) {
     long value;
     sds s = o->ptr;
@@ -445,28 +445,35 @@ robj *tryObjectEncoding(robj *o) {
     /* Make sure this is a string object, the only type we encode
      * in this function. Other types use encoded memory efficient
      * representations but are handled by the commands implementing
-     * the type. */
+     * the type. 
+     * 这里只编码string对象，其他类型的的编码都由其对应的实现处理 */
     serverAssertWithInfo(NULL,o,o->type == OBJ_STRING);
 
     /* We try some specialized encoding only for objects that are
      * RAW or EMBSTR encoded, in other words objects that are still
-     * in represented by an actually array of chars. */
+     * in represented by an actually array of chars.
+     * 非sds string直接返回原数据 */
     if (!sdsEncodedObject(o)) return o;
 
     /* It's not safe to encode shared objects: shared objects can be shared
      * everywhere in the "object space" of Redis and may end in places where
-     * they are not handled. We handle them only as values in the keyspace. */
+     * they are not handled. We handle them only as values in the keyspace. 
+     * 如果是共享的对象，不能编码，因为可能会影响到其他地方的使用*/
      if (o->refcount > 1) return o;
 
     /* Check if we can represent this string as a long integer.
      * Note that we are sure that a string larger than 20 chars is not
-     * representable as a 32 nor 64 bit integer. */
+     * representable as a 32 nor 64 bit integer. 
+     * 检查是否可以把字符串表示为一个长整型数。注意如果长度大于20个字符的字符串是
+     * 不能被表示为32或者64位的整数的*/
     len = sdslen(s);
     if (len <= 20 && string2l(s,len,&value)) {
         /* This object is encodable as a long. Try to use a shared object.
          * Note that we avoid using shared integers when maxmemory is used
          * because every object needs to have a private LRU field for the LRU
-         * algorithm to work well. */
+         * algorithm to work well. 
+         * 如果可以被编码为long型，且编码后的值小于OBJ_SHARED_INTEGERS(10000)，且未配
+         * 置LRU替换淘汰策略, 就使用这个数的共享对象，相当于所有小于10000的数都是用的同一个robj*/
         if ((server.maxmemory == 0 ||
             !(server.maxmemory_policy & MAXMEMORY_FLAG_NO_SHARED_INTEGERS)) &&
             value >= 0 &&
@@ -476,22 +483,26 @@ robj *tryObjectEncoding(robj *o) {
             incrRefCount(shared.integers[value]);
             return shared.integers[value];
         } else {
+            /* 否则原来如果是RAW类型，直接转为OBJ_ENCODING_INT类型，然后用long来直接存储字符串 */    
             if (o->encoding == OBJ_ENCODING_RAW) {
                 sdsfree(o->ptr);
                 o->encoding = OBJ_ENCODING_INT;
                 o->ptr = (void*) value;
                 return o;
+            /*如果是OBJ_ENCODING_EMBSTR，也会转化为OBJ_ENCODING_INT，并用long存储字符串*/
             } else if (o->encoding == OBJ_ENCODING_EMBSTR) {
                 decrRefCount(o);
                 return createStringObjectFromLongLongForValue(value);
             }
         }
     }
+    // 对于那些无法转为long的字符串，做如下处理
 
     /* If the string is small and is still RAW encoded,
      * try the EMBSTR encoding which is more efficient.
      * In this representation the object and the SDS string are allocated
-     * in the same chunk of memory to save space and cache misses. */
+     * in the same chunk of memory to save space and cache misses. 
+     * 如果字符串太小，长度小于等于44，直接转为OBJ_ENCODING_EMBSTR*/
     if (len <= OBJ_ENCODING_EMBSTR_SIZE_LIMIT) {
         robj *emb;
 
@@ -509,15 +520,21 @@ robj *tryObjectEncoding(robj *o) {
      *
      * We do that only for relatively large strings as this branch
      * is only entered if the length of the string is greater than
-     * OBJ_ENCODING_EMBSTR_SIZE_LIMIT. */
+     * OBJ_ENCODING_EMBSTR_SIZE_LIMIT. 
+     * 
+     * 如果前面没有编码成功，这里做最后一次尝试，如果sds有超过10%的可用空闲空间，
+     * 且字符长度大于OBJ_ENCODING_EMBSTR_SIZE_LIMIT(44)，那尝试释放sds中多余
+     * 的空间以节省内存。
+     **/
     trimStringObjectIfNeeded(o);
 
-    /* Return the original object. */
+    /* 直接返回原始对象. */
     return o;
 }
 
 /* Get a decoded version of an encoded object (returned as a new object).
- * If the object is already raw-encoded just increment the ref count. */
+ * If the object is already raw-encoded just increment the ref count.
+ * 获取解码后的对象(返回的是有个新对象)，如果这个对象是个原始类型，只是把引用加一。 */
 robj *getDecodedObject(robj *o) {
     robj *dec;
 
