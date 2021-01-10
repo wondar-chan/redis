@@ -70,7 +70,7 @@ static const size_t optimization_level[] = {4096, 8192, 16384, 32768, 65536};
 #else
 #define D(...)                                                                 \
     do {                                                                       \
-        printf("%s:%s:%d:\t", __FILE__, __FUNCTION__, __LINE__);               \
+        printf("%s:%s:%d:\t", __FILE__, __func__, __LINE__);                   \
         printf(__VA_ARGS__);                                                   \
         printf("\n");                                                          \
     } while (0)
@@ -1505,15 +1505,6 @@ void quicklistBookmarksClear(quicklist *ql) {
 #include <stdint.h>
 #include <sys/time.h>
 
-#define assert(_e)                                                             \
-    do {                                                                       \
-        if (!(_e)) {                                                           \
-            printf("\n\n=== ASSERTION FAILED ===\n");                          \
-            printf("==> %s:%d '%s' is not true\n", __FILE__, __LINE__, #_e);   \
-            err++;                                                             \
-        }                                                                      \
-    } while (0)
-
 #define yell(str, ...) printf("ERROR! " str "\n\n", __VA_ARGS__)
 
 #define OK printf("\tOK\n")
@@ -1526,7 +1517,7 @@ void quicklistBookmarksClear(quicklist *ql) {
 
 #define ERR(x, ...)                                                            \
     do {                                                                       \
-        printf("%s:%s:%d:\t", __FILE__, __FUNCTION__, __LINE__);               \
+        printf("%s:%s:%d:\t", __FILE__, __func__, __LINE__);                   \
         printf("ERROR! " x "\n", __VA_ARGS__);                                 \
         err++;                                                                 \
     } while (0)
@@ -1611,7 +1602,7 @@ static int _ql_verify(quicklist *ql, uint32_t len, uint32_t count,
 
     ql_info(ql);
     if (len != ql->len) {
-        yell("quicklist length wrong: expected %d, got %u", len, ql->len);
+        yell("quicklist length wrong: expected %d, got %lu", len, ql->len);
         errors++;
     }
 
@@ -1667,7 +1658,7 @@ static int _ql_verify(quicklist *ql, uint32_t len, uint32_t count,
                 if (node->encoding != QUICKLIST_NODE_ENCODING_RAW) {
                     yell("Incorrect compression: node %d is "
                          "compressed at depth %d ((%u, %u); total "
-                         "nodes: %u; size: %u; recompress: %d)",
+                         "nodes: %lu; size: %u; recompress: %d)",
                          at, ql->compress, low_raw, high_raw, ql->len, node->sz,
                          node->recompress);
                     errors++;
@@ -1677,7 +1668,7 @@ static int _ql_verify(quicklist *ql, uint32_t len, uint32_t count,
                     !node->attempted_compress) {
                     yell("Incorrect non-compression: node %d is NOT "
                          "compressed at depth %d ((%u, %u); total "
-                         "nodes: %u; size: %u; recompress: %d; attempted: %d)",
+                         "nodes: %lu; size: %u; recompress: %d; attempted: %d)",
                          at, ql->compress, low_raw, high_raw, ql->len, node->sz,
                          node->recompress, node->attempted_compress);
                     errors++;
@@ -2703,7 +2694,7 @@ int quicklistTest(int argc, char *argv[]) {
                             if (node->encoding != QUICKLIST_NODE_ENCODING_RAW) {
                                 ERR("Incorrect compression: node %d is "
                                     "compressed at depth %d ((%u, %u); total "
-                                    "nodes: %u; size: %u)",
+                                    "nodes: %lu; size: %u)",
                                     at, depth, low_raw, high_raw, ql->len,
                                     node->sz);
                             }
@@ -2711,7 +2702,7 @@ int quicklistTest(int argc, char *argv[]) {
                             if (node->encoding != QUICKLIST_NODE_ENCODING_LZF) {
                                 ERR("Incorrect non-compression: node %d is NOT "
                                     "compressed at depth %d ((%u, %u); total "
-                                    "nodes: %u; size: %u; attempted: %d)",
+                                    "nodes: %lu; size: %u; attempted: %d)",
                                     at, depth, low_raw, high_raw, ql->len,
                                     node->sz, node->attempted_compress);
                             }

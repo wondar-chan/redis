@@ -1662,7 +1662,7 @@ int ziplistTest(int argc, char **argv) {
         if (p == NULL) {
             printf("No entry\n");
         } else {
-            printf("ERROR: Out of range index should return NULL, returned offset: %ld\n", p-zl);
+            printf("ERROR: Out of range index should return NULL, returned offset: %ld\n", (long)(p-zl));
             return 1;
         }
         printf("\n");
@@ -1712,7 +1712,7 @@ int ziplistTest(int argc, char **argv) {
         if (p == NULL) {
             printf("No entry\n");
         } else {
-            printf("ERROR: Out of range index should return NULL, returned offset: %ld\n", p-zl);
+            printf("ERROR: Out of range index should return NULL, returned offset: %ld\n", (long)(p-zl));
             return 1;
         }
         printf("\n");

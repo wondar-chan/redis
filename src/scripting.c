@@ -366,10 +366,7 @@ void luaReplyToRedisReply(client *c, lua_State *lua) {
         lua_gettable(lua,-2);
         t = lua_type(lua,-1);
         if (t == LUA_TSTRING) {
-            sds err = sdsnew(lua_tostring(lua,-1));
-            sdsmapchars(err,"\r\n","  ",2);
-            addReplyErrorSds(c,sdscatprintf(sdsempty(),"-%s",err));
-            sdsfree(err);
+            addReplyErrorFormat(c,"-%s",lua_tostring(lua,-1));
             lua_pop(lua,2);
             return;
         }
@@ -410,9 +407,9 @@ void luaReplyToRedisReply(client *c, lua_State *lua) {
             lua_pushnil(lua); /* Use nil to start iteration. */
             while (lua_next(lua,-2)) {
                 /* Stack now: table, key, value */
-                luaReplyToRedisReply(c, lua); /* Return value. */
-                lua_pushvalue(lua,-1);        /* Dup key before consuming. */
+                lua_pushvalue(lua,-2);        /* Dup key before consuming. */
                 luaReplyToRedisReply(c, lua); /* Return key. */
+                luaReplyToRedisReply(c, lua); /* Return value. */
                 /* Stack now: table, key. */
                 maplen++;
             }
@@ -694,11 +691,11 @@ int luaRedisGenericCommand(lua_State *lua, int raise_error) {
         if (getNodeByQuery(c,c->cmd,c->argv,c->argc,NULL,&error_code) !=
                            server.cluster->myself)
         {
-            if (error_code == CLUSTER_REDIR_DOWN_RO_STATE) { 
+            if (error_code == CLUSTER_REDIR_DOWN_RO_STATE) {
                 luaPushError(lua,
                     "Lua script attempted to execute a write command while the "
                     "cluster is down and readonly");
-            } else if (error_code == CLUSTER_REDIR_DOWN_STATE) { 
+            } else if (error_code == CLUSTER_REDIR_DOWN_STATE) {
                 luaPushError(lua,
                     "Lua script attempted to execute a command while the "
                     "cluster is down");
@@ -1710,11 +1707,16 @@ void evalShaCommand(client *c) {
 void scriptCommand(client *c) {
     if (c->argc == 2 && !strcasecmp(c->argv[1]->ptr,"help")) {
         const char *help[] = {
-"DEBUG (yes|sync|no) -- Set the debug mode for subsequent scripts executed.",
-"EXISTS <sha1> [<sha1> ...] -- Return information about the existence of the scripts in the script cache.",
-"FLUSH -- Flush the Lua scripts cache. Very dangerous on replicas.",
-"KILL -- Kill the currently executing Lua script.",
-"LOAD <script> -- Load a script into the scripts cache, without executing it.",
+"DEBUG (YES|SYNC|NO)",
+"    Set the debug mode for subsequent scripts executed.",
+"EXISTS <sha1> [<sha1> ...]",
+"    Return information about the existence of the scripts in the script cache.",
+"FLUSH",
+"    Flush the Lua scripts cache. Very dangerous on replicas.",
+"KILL",
+"    Kill the currently executing Lua script.",
+"LOAD <script>",
+"    Load a script into the scripts cache without executing it.",
 NULL
         };
         addReplyHelp(c, help);
@@ -1765,7 +1767,7 @@ NULL
             addReply(c,shared.ok);
             c->flags |= CLIENT_LUA_DEBUG_SYNC;
         } else {
-            addReplyError(c,"Use SCRIPT DEBUG yes/sync/no");
+            addReplyError(c,"Use SCRIPT DEBUG YES/SYNC/NO");
             return;
         }
     } else {

@@ -577,7 +577,18 @@ void signalModifiedKey(client *c, redisDb *db, robj *key) {
 }
 
 void signalFlushedDb(int dbid, int async) {
-    touchWatchedKeysOnFlush(dbid);
+    int startdb, enddb;
+    if (dbid == -1) {
+        startdb = 0;
+        enddb = server.dbnum-1;
+    } else {
+        startdb = enddb = dbid;
+    }
+
+    for (int j = startdb; j <= enddb; j++) {
+        touchAllWatchedKeysInDb(&server.db[j], NULL);
+    }
+
     trackingInvalidateKeysOnFlush(async);
 }
 
@@ -611,7 +622,7 @@ int getFlushCommandFlags(client *c, int *flags) {
 void flushAllDataAndResetRDB(int flags) {
     server.dirty += emptyDb(-1,flags,NULL);
     // 杀掉rdb子进程 
-    if (server.rdb_child_pid != -1) killRDBChild();
+    if (server.child_type == CHILD_TYPE_RDB) killRDBChild();
     if (server.saveparamslen > 0) {
         /* rdbSave()会重置dirty值，但我们这里不希望这么做，因为重置dirty后FLUSHALL不
          * 会传播到副本或者保留到AOF文件中 */ 
@@ -1336,9 +1347,14 @@ int dbSwapDatabases(long id1, long id2) {
      * However normally we only do this check for efficiency reasons
      * in dbAdd() when a list is created. So here we need to rescan
      * the list of clients blocked on lists and signal lists as ready
-     * if needed. */
+     * if needed.
+     *
+     * Also the swapdb should make transaction fail if there is any
+     * client watching keys */
     scanDatabaseForReadyLists(db1);
+    touchAllWatchedKeysInDb(db1, db2);
     scanDatabaseForReadyLists(db2);
+    touchAllWatchedKeysInDb(db2, db1);
     return C_OK;
 }
 
@@ -1508,6 +1524,12 @@ int expireIfNeeded(redisDb *db, robj *key) {
      * that is, 0 if we think the key should be still valid, 1 if
      * we think the key is expired at this time. */
     if (server.masterhost != NULL) return 1;
+
+    /* If clients are paused, we keep the current dataset constant,
+     * but return to the client what we believe is the right state. Typically,
+     * at the end of the pause we will properly expire the key OR we will
+     * have failed over and the new primary will send us the expire. */
+    if (checkClientPauseTimeoutAndReturnIfPaused()) return 1;
 
     /* Delete the key */
     server.stat_expiredkeys++;

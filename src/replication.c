@@ -790,7 +790,7 @@ void syncCommand(client *c) {
 
     /* CASE 1: BGSAVE is in progress, with disk target.
      * 情况1： BGSAVE正在执行中，rdb信息正在写入文件中  */
-    if (server.rdb_child_pid != -1 &&
+    if (server.child_type == CHILD_TYPE_RDB &&
         server.rdb_child_type == RDB_CHILD_TYPE_DISK)
     {
         /* Ok a background save is in progress. Let's check if it is a good
@@ -818,10 +818,9 @@ void syncCommand(client *c) {
              * register differences. */
             serverLog(LL_NOTICE,"Can't attach the replica to the current BGSAVE. Waiting for next BGSAVE for SYNC");
         }
-
     /* CASE 2: BGSAVE is in progress, with socket target. 
      * 情况2： BGSAVE正在执行中，rdb信息正在写入slave的socket中*/
-    } else if (server.rdb_child_pid != -1 &&
+    } else if (server.child_type == CHILD_TYPE_RDB &&
                server.rdb_child_type == RDB_CHILD_TYPE_SOCKET)
     {
         /* There is an RDB child process but it is writing directly to
@@ -921,7 +920,7 @@ void replconfCommand(client *c) {
              * There's a chance the ACK got to us before we detected that the
              * bgsave is done (since that depends on cron ticks), so run a
              * quick check first (instead of waiting for the next ACK. */
-            if (server.rdb_child_pid != -1 && c->replstate == SLAVE_STATE_WAIT_BGSAVE_END)
+            if (server.child_type == CHILD_TYPE_RDB && c->replstate == SLAVE_STATE_WAIT_BGSAVE_END)
                 checkChildrenDone();
             if (c->repl_put_online_on_ack && c->replstate == SLAVE_STATE_ONLINE)
                 putSlaveOnline(c);
@@ -1697,7 +1696,6 @@ void readSyncBulkPayload(connection *conn) {
              * gets promoted. */
             return;
         }
-        stopLoading(1);
 
         /* RDB loading succeeded if we reach this point. */
         if (server.repl_diskless_load == REPL_DISKLESS_LOAD_SWAPDB) {
@@ -1712,12 +1710,15 @@ void readSyncBulkPayload(connection *conn) {
             if (!rioRead(&rdb,buf,CONFIG_RUN_ID_SIZE) ||
                 memcmp(buf,eofmark,CONFIG_RUN_ID_SIZE) != 0)
             {
+                stopLoading(0);
                 serverLog(LL_WARNING,"Replication stream EOF marker is broken");
                 cancelReplicationHandshake(1);
                 rioFreeConn(&rdb, NULL);
                 return;
             }
         }
+
+        stopLoading(1);
 
         /* Cleanup and restore the socket to the original state to continue
          * with the normal replication. */
@@ -1726,13 +1727,13 @@ void readSyncBulkPayload(connection *conn) {
         connRecvTimeout(conn,0);
     } else {
         /* Ensure background save doesn't overwrite synced data */
-        if (server.rdb_child_pid != -1) {
+        if (server.child_type == CHILD_TYPE_RDB) {
             serverLog(LL_NOTICE,
                 "Replica is about to load the RDB file received from the "
                 "master, but there is a pending RDB child running. "
                 "Killing process %ld and removing its temp file to avoid "
                 "any race",
-                    (long) server.rdb_child_pid);
+                (long) server.child_pid);
             killRDBChild();
         }
 
@@ -3248,7 +3249,7 @@ void replicationCron(void) {
         int manual_failover_in_progress =
             server.cluster_enabled &&
             server.cluster->mf_end &&
-            clientsArePaused();
+            checkClientPauseTimeoutAndReturnIfPaused();
 
         if (!manual_failover_in_progress) {
             ping_argv[0] = createStringObject("PING",4);
