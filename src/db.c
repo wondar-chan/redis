@@ -1515,14 +1515,10 @@ int keyIsExpired(redisDb *db, robj *key) {
 int expireIfNeeded(redisDb *db, robj *key) {
     if (!keyIsExpired(db,key)) return 0;
 
-    /* If we are running in the context of a slave, instead of
-     * evicting the expired key from the database, we return ASAP:
-     * the slave key expiration is controlled by the master that will
-     * send us synthesized DEL operations for expired keys.
-     *
-     * Still we try to return the right information to the caller,
-     * that is, 0 if we think the key should be still valid, 1 if
-     * we think the key is expired at this time. */
+    /* 如果是在slave上下文中运行，直接返回1，因为slave的key过期是由master控制的，
+     * master会给slave发送数据删除命令。 
+     * 
+     * 如果返回0表示数据不需要清理，返回1表示数据这次标记为过期 */
     if (server.masterhost != NULL) return 1;
 
     /* If clients are paused, we keep the current dataset constant,

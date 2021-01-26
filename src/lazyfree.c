@@ -165,7 +165,9 @@ int dbAsyncDelete(redisDb *db, robj *key) {
          * through and reach the dictFreeUnlinkedEntry() call, that will be
          * equivalent to just calling decrRefCount(). 
          * 如果释放这个对象需要做大量的工作，就把他放到异步线程里做
-         * 但如果这个对象是共享对象(refcount > 1)就不能直接释放了 */
+         * 但如果这个对象是共享对象(refcount > 1)就不能直接释放了，当然这很少发送，但有可能redis
+         * 核心会调用incrRefCount来保护对象，然后调用dbDelete。这我只需要直接调用dictFreeUnlinkedEntry，
+         * 等价于调用decrRefCount */
         if (free_effort > LAZYFREE_THRESHOLD && val->refcount == 1) {
             atomicIncr(lazyfree_objects,1);
             bioCreateLazyFreeJob(lazyfreeFreeObject,1, val);
