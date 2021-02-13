@@ -261,6 +261,14 @@ sds sdsmapchars(sds s, const char *from, const char *to, size_t setlen);
 sds sdsjoin(char **argv, int argc, char *sep); // 把字符串数组按指定的分隔符拼接起来
 sds sdsjoinsds(sds *argv, int argc, const char *sep, size_t seplen); // 把sds数组按指定的分隔符拼接起来
 
+/* Callback for sdstemplate. The function gets called by sdstemplate
+ * every time a variable needs to be expanded. The variable name is
+ * provided as variable, and the callback is expected to return a
+ * substitution value. Returning a NULL indicates an error.
+ */
+typedef sds (*sdstemplate_callback_t)(const sds variable, void *arg);
+sds sdstemplate(const char *template, sdstemplate_callback_t cb_func, void *cb_arg);
+
 /* sds底层api */
 sds sdsMakeRoomFor(sds s, size_t addlen);  // sds扩容
 void sdsIncrLen(sds s, ssize_t incr); // 扩容指定长度

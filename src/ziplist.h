@@ -34,6 +34,15 @@
 #define ZIPLIST_HEAD 0
 #define ZIPLIST_TAIL 1
 
+/* Each entry in the ziplist is either a string or an integer. */
+typedef struct {
+    /* When string is used, it is provided with the length (slen). */
+    unsigned char *sval;
+    unsigned int slen;
+    /* When integer is used, 'sval' is NULL, and lval holds the value. */
+    long long lval;
+} ziplistEntry;
+
 unsigned char *ziplistNew(void);  // 新建ziplist
 unsigned char *ziplistMerge(unsigned char **first, unsigned char **second);  // 合并两个ziplist 
 unsigned char *ziplistPush(unsigned char *zl, unsigned char *s, unsigned int slen, int where); // 在ziplist头部或者尾部push一个节点 
@@ -46,13 +55,16 @@ unsigned char *ziplistDelete(unsigned char *zl, unsigned char **p); // 删除
 unsigned char *ziplistDeleteRange(unsigned char *zl, int index, unsigned int num); // 删除某个下标区间内的节点 
 unsigned int ziplistCompare(unsigned char *p, unsigned char *s, unsigned int slen);  // 比较两个节点的大小  
 unsigned char *ziplistFind(unsigned char *zl, unsigned char *p, unsigned char *vstr, unsigned int vlen, unsigned int skip); // 找到某个特定值的节点
- 
 unsigned int ziplistLen(unsigned char *zl);  // ziplist的长度  
 size_t ziplistBlobLen(unsigned char *zl);  // ziplist的存储空间大小 
 void ziplistRepr(unsigned char *zl);   // 
+
 typedef int (*ziplistValidateEntryCB)(unsigned char* p, void* userdata);
 int ziplistValidateIntegrity(unsigned char *zl, size_t size, int deep,
                              ziplistValidateEntryCB entry_cb, void *cb_userdata);
+void ziplistRandomPair(unsigned char *zl, unsigned long total_count, ziplistEntry *key, ziplistEntry *val);
+void ziplistRandomPairs(unsigned char *zl, unsigned int count, ziplistEntry *keys, ziplistEntry *vals);
+unsigned int ziplistRandomPairsUnique(unsigned char *zl, unsigned int count, ziplistEntry *keys, ziplistEntry *vals);
 
 #ifdef REDIS_TEST
 int ziplistTest(int argc, char *argv[]);

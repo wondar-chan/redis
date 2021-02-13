@@ -57,17 +57,21 @@
 
 int activeExpireCycleTryExpire(redisDb *db, dictEntry *de, long long now) {
     long long t = dictGetSignedIntegerVal(de);
+    mstime_t expire_latency;
     if (now > t) {
         sds key = dictGetKey(de);
         robj *keyobj = createStringObject(key,sdslen(key));
         // 把过期时间传递给slaves和aof文件  
         propagateExpire(db,keyobj,server.lazyfree_lazy_expire);
+        latencyStartMonitor(expire_latency);
         if (server.lazyfree_lazy_expire)
             // 异步删除 
             dbAsyncDelete(db,keyobj);
         else
             // 同步删除
             dbSyncDelete(db,keyobj);
+        latencyEndMonitor(expire_latency);
+        latencyAddSampleIfNeeded("expire-del",expire_latency);
         notifyKeyspaceEvent(NOTIFY_EXPIRED,
             "expired",keyobj,db->id);
         signalModifiedKey(NULL, db, keyobj);
@@ -85,9 +89,8 @@ int activeExpireCycleTryExpire(redisDb *db, dictEntry *de, long long now) {
  * keys that can be removed from the keyspace.
  *
  * Every expire cycle tests multiple databases: the next call will start
- * again from the next db, with the exception of exists for time limit: in that
- * case we restart again from the last database we were processing. Anyway
- * no more than CRON_DBS_PER_CALL databases are tested at every iteration.
+ * again from the next db. No more than CRON_DBS_PER_CALL databases are
+ * tested at every iteration.
  *
  * The function can perform more or less work, depending on the "type"
  * argument. It can execute a "fast cycle" or a "slow cycle". The slow
@@ -143,7 +146,7 @@ void activeExpireCycle(int type) {
 
     /* This function has some global state in order to continue the work
      * incrementally across calls. */
-    static unsigned int current_db = 0; /* Last DB tested. */
+    static unsigned int current_db = 0; /* Next DB to test. */
     static int timelimit_exit = 0;      /* Time limit hit in previous call? */
     static long long last_fast_cycle = 0; /* When last fast cycle ran. */
 
@@ -229,8 +232,8 @@ void activeExpireCycle(int type) {
             slots = dictSlots(db->expires);
             now = mstime();
 
-            /* 如果slot的填充率小于1%，采样的成本太高，跳过执行，等待下次合适的机会。*/
-            if (num && slots > DICT_HT_INITIAL_SIZE &&
+            /* 如果slot的填充率小于1%，采样的成本太高，跳过执行，等待下次合适的机会。dict会尽快执行resize*/
+            if (slots > DICT_HT_INITIAL_SIZE &&
                 (num*100/slots < 1)) break;
 
             /* 记录本次采样的数据和其中过期的数量 */

@@ -530,7 +530,7 @@ void trimReplyUnusedTailSpace(client *c) {
     listNode *ln = listLast(c->reply);
     clientReplyBlock *tail = ln? listNodeValue(ln): NULL;
 
-    /* Note that 'tail' may be NULL even if we have a tail node, becuase when
+    /* Note that 'tail' may be NULL even if we have a tail node, because when
      * addReplyDeferredLen() is used */
     if (!tail) return;
 
@@ -720,10 +720,7 @@ void addReplyLongLong(client *c, long long ll) {
 
 void addReplyAggregateLen(client *c, long length, int prefix) {
     serverAssert(length >= 0);
-    if (prefix == '*' && length < OBJ_SHARED_BULKHDR_LEN)
-        addReply(c,shared.mbulkhdr[length]);
-    else
-        addReplyLongLongWithPrefix(c,length,prefix);
+    addReplyLongLongWithPrefix(c,length,prefix);
 }
 
 void addReplyArrayLen(client *c, long length) {
@@ -784,10 +781,7 @@ void addReplyNullArray(client *c) {
 void addReplyBulkLen(client *c, robj *obj) {
     size_t len = stringObjectLen(obj);
 
-    if (len < OBJ_SHARED_BULKHDR_LEN)
-        addReply(c,shared.bulkhdr[len]);
-    else
-        addReplyLongLongWithPrefix(c,len,'$');
+    addReplyLongLongWithPrefix(c,len,'$');
 }
 
 /* Add a Redis Object as a bulk reply */
@@ -1110,6 +1104,7 @@ void acceptTcpHandler(aeEventLoop *el, int fd, void *privdata, int mask) {
                     "Accepting client connection: %s", server.neterr);
             return;
         }
+        anetCloexec(cfd);
         serverLog(LL_VERBOSE,"Accepted %s:%d", cip, cport);
         // 处理请求 
         acceptCommonHandler(connCreateAcceptedSocket(cfd),0,cip);
@@ -1131,6 +1126,7 @@ void acceptTLSHandler(aeEventLoop *el, int fd, void *privdata, int mask) {
                     "Accepting client connection: %s", server.neterr);
             return;
         }
+        anetCloexec(cfd);
         serverLog(LL_VERBOSE,"Accepted %s:%d", cip, cport);
         acceptCommonHandler(connCreateAcceptedTLS(cfd, server.tls_auth_clients),0,cip);
     }
@@ -1150,6 +1146,7 @@ void acceptUnixHandler(aeEventLoop *el, int fd, void *privdata, int mask) {
                     "Accepting client connection: %s", server.neterr);
             return;
         }
+        anetCloexec(cfd);
         serverLog(LL_VERBOSE,"Accepted connection to %s", server.unixsocket);
         acceptCommonHandler(connCreateAcceptedSocket(cfd),CLIENT_UNIX_SOCKET,NULL);
     }
@@ -1436,7 +1433,7 @@ void freeClientAsync(client *c) {
     pthread_mutex_unlock(&async_free_queue_mutex);
 }
 
-/* Free the clietns marked as CLOSE_ASAP, return the number of clients
+/* Free the clients marked as CLOSE_ASAP, return the number of clients
  * freed. */
 int freeClientsInAsyncFreeQueue(void) {
     int freed = 0;
@@ -1715,7 +1712,7 @@ int processInlineBuffer(client *c) {
     }
 
     /* Handle the \r\n case. */
-    if (newline && newline != c->querybuf+c->qb_pos && *(newline-1) == '\r')
+    if (newline != c->querybuf+c->qb_pos && *(newline-1) == '\r')
         newline--, linefeed_chars++;
 
     /* Split the input buffer up to the \r\n */
@@ -2444,8 +2441,10 @@ void clientCommand(client *c) {
 "    Kill connection made from <ip:port>.",
 "KILL <option> <value> [<option> <value> [...]]",
 "    Kill connections. Options are:",
-"    * ADDR <ip:port>",
-"      Kill connection made from <ip:port>",
+"    * ADDR (<ip:port>|<unixsocket>:0)",
+"      Kill connections made from the specified address",
+"    * LADDR (<ip:port>|<unixsocket>:0)",
+"      Kill connections made to specified local address",
 "    * TYPE (normal|master|replica|pubsub)",
 "      Kill connections by type.",
 "    * USER <username>",
@@ -2683,7 +2682,7 @@ NULL
                                                         c->argc == 4))
     {
         /* CLIENT PAUSE TIMEOUT [WRITE|ALL] */
-        long long duration;
+        mstime_t end;
         int type = CLIENT_PAUSE_ALL;
         if (c->argc == 4) {
             if (!strcasecmp(c->argv[3]->ptr,"write")) {
@@ -2697,9 +2696,9 @@ NULL
             }
         }
 
-        if (getTimeoutFromObjectOrReply(c,c->argv[2],&duration,
+        if (getTimeoutFromObjectOrReply(c,c->argv[2],&end,
             UNIT_MILLISECONDS) != C_OK) return;
-        pauseClients(duration, type);
+        pauseClients(end, type);
         addReply(c,shared.ok);
     } else if (!strcasecmp(c->argv[1]->ptr,"tracking") && c->argc >= 3) {
         /* CLIENT TRACKING (on|off) [REDIRECT <id>] [BCAST] [PREFIX first]
@@ -3363,8 +3362,6 @@ void processEventsWhileBlocked(void) {
  * Threaded I/O
  * ========================================================================== */
 
-int tio_debug = 0;
-
 #define IO_THREADS_MAX_NUM 128
 #define IO_THREADS_OP_READ 0
 #define IO_THREADS_OP_WRITE 1
@@ -3419,8 +3416,6 @@ void *IOThreadMain(void *myid) {
 
         serverAssert(getIOPendingCount(id) != 0);
 
-        if (tio_debug) printf("[%ld] %d to handle\n", id, (int)listLength(io_threads_list[id]));
-
         /* Process: note that the main thread will never touch our list
          * before we drop the pending count to 0. */
         listIter li;
@@ -3438,8 +3433,6 @@ void *IOThreadMain(void *myid) {
         }
         listEmpty(io_threads_list[id]);
         setIOPendingCount(id, 0);
-
-        if (tio_debug) printf("[%ld] Done\n", id);
     }
 }
 
@@ -3494,8 +3487,6 @@ void killIOThreads(void) {
 }
 
 void startThreadedIO(void) {
-    if (tio_debug) { printf("S"); fflush(stdout); }
-    if (tio_debug) printf("--- STARTING THREADED IO ---\n");
     serverAssert(server.io_threads_active == 0);
     for (int j = 1; j < server.io_threads_num; j++)
         pthread_mutex_unlock(&io_threads_mutex[j]);
@@ -3506,10 +3497,6 @@ void stopThreadedIO(void) {
     /* We may have still clients with pending reads when this function
      * is called: handle them before stopping the threads. */
     handleClientsWithPendingReadsUsingThreads();
-    if (tio_debug) { printf("E"); fflush(stdout); }
-    if (tio_debug) printf("--- STOPPING THREADED IO [R%d] [W%d] ---\n",
-        (int) listLength(server.clients_pending_read),
-        (int) listLength(server.clients_pending_write));
     serverAssert(server.io_threads_active == 1);
     for (int j = 1; j < server.io_threads_num; j++)
         pthread_mutex_lock(&io_threads_mutex[j]);
@@ -3544,7 +3531,7 @@ int handleClientsWithPendingWritesUsingThreads(void) {
     if (processed == 0) return 0; /* Return ASAP if there are no clients. */
 
     /* If I/O threads are disabled or we have few clients to serve, don't
-     * use I/O threads, but thejboring synchronous code. 
+     * use I/O threads, but the boring synchronous code. 
      * 如果IO是单线程模式，或者没有足够的待处理任务，就不启用多线程 */
     if (server.io_threads_num == 1 || stopThreadedIOIfNeeded()) {
         return handleClientsWithPendingWrites();
@@ -3552,8 +3539,6 @@ int handleClientsWithPendingWritesUsingThreads(void) {
 
     /* Start threads if needed. */
     if (!server.io_threads_active) startThreadedIO();
-
-    if (tio_debug) printf("%d TOTAL WRITE pending clients\n", processed);
 
     /* Distribute the clients across N different lists. */
     listIter li;
@@ -3600,7 +3585,6 @@ int handleClientsWithPendingWritesUsingThreads(void) {
             pending += getIOPendingCount(j);
         if (pending == 0) break;
     }
-    if (tio_debug) printf("I/O WRITE All threads finshed\n");
 
     /* Run the list of clients again to install the write handler where
      * needed. */
@@ -3653,8 +3637,6 @@ int handleClientsWithPendingReadsUsingThreads(void) {
     int processed = listLength(server.clients_pending_read);
     if (processed == 0) return 0;
 
-    if (tio_debug) printf("%d TOTAL READ pending clients\n", processed);
-
     /* Distribute the clients across N different lists. */
     listIter li;
     listNode *ln;
@@ -3690,7 +3672,6 @@ int handleClientsWithPendingReadsUsingThreads(void) {
             pending += getIOPendingCount(j);  // pending为0说明所有任务已处理完成 
         if (pending == 0) break;
     }
-    if (tio_debug) printf("I/O READ All threads finshed\n");
 
     /* Run the list of clients again to process the new buffers. */
     while(listLength(server.clients_pending_read)) {
