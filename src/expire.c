@@ -125,7 +125,7 @@ int activeExpireCycleTryExpire(redisDb *db, dictEntry *de, long long now) {
 #define ACTIVE_EXPIRE_CYCLE_SLOW_TIME_PERC 25 /* 最大CPU使用率. */
 #define ACTIVE_EXPIRE_CYCLE_ACCEPTABLE_STALE 10 /* % of stale keys after which
                                                    we do extra efforts. */
-
+/* 有两种清理模式，快速清理和慢速清理 */
 void activeExpireCycle(int type) {
     /* Adjust the running parameters according to the configured expire
      * effort. The default effort is 1, and the maximum configurable effort
@@ -133,13 +133,13 @@ void activeExpireCycle(int type) {
     unsigned long
     effort = server.active_expire_effort-1, /* Rescale from 0 to 9. */
     config_keys_per_loop = ACTIVE_EXPIRE_CYCLE_KEYS_PER_LOOP +
-                           ACTIVE_EXPIRE_CYCLE_KEYS_PER_LOOP/4*effort,
+                           ACTIVE_EXPIRE_CYCLE_KEYS_PER_LOOP/4*effort,  // 每次抽样的数据量大小 
     config_cycle_fast_duration = ACTIVE_EXPIRE_CYCLE_FAST_DURATION +
-                                 ACTIVE_EXPIRE_CYCLE_FAST_DURATION/4*effort,
+                                 ACTIVE_EXPIRE_CYCLE_FAST_DURATION/4*effort, // 每次清理的持续时间
     config_cycle_slow_time_perc = ACTIVE_EXPIRE_CYCLE_SLOW_TIME_PERC +
-                                  2*effort,
+                                  2*effort,  // 最大CPU周期使用率 
     config_cycle_acceptable_stale = ACTIVE_EXPIRE_CYCLE_ACCEPTABLE_STALE-
-                                    effort;
+                                    effort; // 可接受的过期数据占比 
 
     /* This function has some global state in order to continue the work
      * incrementally across calls. */
@@ -155,16 +155,17 @@ void activeExpireCycle(int type) {
      * POV of clients not being able to write, but also from the POV of
      * expires and evictions of keys not being performed. */
     if (checkClientPauseTimeoutAndReturnIfPaused()) return;
-
+    // 快速清理 
     if (type == ACTIVE_EXPIRE_CYCLE_FAST) {
         /* Don't start a fast cycle if the previous cycle did not exit
          * for time limit, unless the percentage of estimated stale keys is
          * too high. Also never repeat a fast cycle for the same period
          * as the fast cycle total duration itself. */
+        // 如果上次执行没有触发timelimit_exit, 跳过执行
         if (!timelimit_exit &&
             server.stat_expired_stale_perc < config_cycle_acceptable_stale)
             return;
-
+        // 两个快速清理周期内不执行快速清理
         if (start < last_fast_cycle + (long long)config_cycle_fast_duration*2)
             return;
 
@@ -184,7 +185,8 @@ void activeExpireCycle(int type) {
     /* We can use at max 'config_cycle_slow_time_perc' percentage of CPU
      * time per iteration. Since this function gets called with a frequency of
      * server.hz times per second, the following is the max amount of
-     * microseconds we can spend in this function. */
+     * microseconds we can spend in this function. 
+     * config_cycle_slow_time_perc是清理所能占用的CPU周期数配置，这里将周期数转化为具体的时间 */
     timelimit = config_cycle_slow_time_perc*1000000/server.hz/100;
     timelimit_exit = 0;
     if (timelimit <= 0) timelimit = 1;
@@ -197,11 +199,11 @@ void activeExpireCycle(int type) {
      * existing inside the database. */
     long total_sampled = 0;
     long total_expired = 0;
-
+    
     for (j = 0; j < dbs_per_call && timelimit_exit == 0; j++) {
         /* Expired and checked in a single loop. */
         unsigned long expired, sampled;
-
+        
         redisDb *db = server.db+(current_db % server.dbnum);
 
         /* Increment the DB now so we are sure if we run out of time
@@ -219,7 +221,7 @@ void activeExpireCycle(int type) {
             int ttl_samples;
             iteration++;
 
-            /* If there is nothing to expire try next DB ASAP. */
+            /* 如果没有可清理的，直接结束 */
             if ((num = dictSize(db->expires)) == 0) {
                 db->avg_ttl = 0;
                 break;
@@ -227,35 +229,28 @@ void activeExpireCycle(int type) {
             slots = dictSlots(db->expires);
             now = mstime();
 
-            /* When there are less than 1% filled slots, sampling the key
-             * space is expensive, so stop here waiting for better times...
-             * The dictionary will be resized asap. */
+            /* 如果slot的填充率小于1%，采样的成本太高，跳过执行，等待下次合适的机会。*/
             if (num && slots > DICT_HT_INITIAL_SIZE &&
                 (num*100/slots < 1)) break;
 
-            /* The main collection cycle. Sample random keys among keys
-             * with an expire set, checking for expired ones. */
+            /* 记录本次采样的数据和其中过期的数量 */
             expired = 0;
             sampled = 0;
             ttl_sum = 0;
             ttl_samples = 0;
-
+            // 每次最多抽样num个 
             if (num > config_keys_per_loop)
                 num = config_keys_per_loop;
 
-            /* Here we access the low level representation of the hash table
-             * for speed concerns: this makes this code coupled with dict.c,
-             * but it hardly changed in ten years.
-             *
-             * Note that certain places of the hash table may be empty,
-             * so we want also a stop condition about the number of
-             * buckets that we scanned. However scanning for free buckets
-             * is very fast: we are in the cache line scanning a sequential
-             * array of NULL pointers, so we can scan a lot more buckets
-             * than keys in the same time. */
+            /* 这里因为性能考量，我们访问了hashcode的的底层实现，代码和dict.c有些类型，
+             * 但十几年内很难改变。 
+             * 
+             * 注意：hashtable很多特定的地方是空的，所以我们的终止条件需要考虑到已扫描的bucket
+             * 数量。 但实际上扫描空bucket是很快的，因为都是在cpu 缓存行里线性扫描，所以可以多
+             * 扫一些bucket */
             long max_buckets = num*20;
             long checked_buckets = 0;
-
+            // 这里有采样数据和bucket数量的限制。 
             while (sampled < num && checked_buckets < max_buckets) {
                 for (int table = 0; table < 2; table++) {
                     if (table == 1 && !dictIsRehashing(db->expires)) break;
@@ -289,7 +284,7 @@ void activeExpireCycle(int type) {
             total_expired += expired;
             total_sampled += sampled;
 
-            /* Update the average TTL stats for this database. */
+            /* 更新ttl统计信息 */
             if (ttl_samples) {
                 long long avg_ttl = ttl_sum/ttl_samples;
 
@@ -302,7 +297,8 @@ void activeExpireCycle(int type) {
 
             /* We can't block forever here even if there are many keys to
              * expire. So after a given amount of milliseconds return to the
-             * caller waiting for the other active expire cycle. */
+             * caller waiting for the other active expire cycle. 
+             * 不能一直阻塞在这里做清理工作，如果超时了要结束清理循环*/
             if ((iteration & 0xf) == 0) { /* check once every 16 iterations. */
                 elapsed = ustime()-start;
                 if (elapsed > timelimit) {
@@ -312,9 +308,8 @@ void activeExpireCycle(int type) {
                 }
             }
             /*
-             * 如果过期key数量超过采样数的10%，再循环做一次采样过期, 
-             * config_cycle_acceptable_stale default值是10，所以是10%的比例，
-             * 该值可以在配置文件里调整(0-9)    
+             * 如果过期key数量超过采样数的10%+effort，说明过期测数量较多，要多清理下，所以
+             * 继续循环做一次采样清理。     
              */
         } while (sampled == 0 ||
                  (expired*100/sampled) > config_cycle_acceptable_stale);
