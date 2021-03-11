@@ -460,17 +460,13 @@ static int evictionTimeProc(
  *   Returns 0 if eviction processing should be skipped
  */
 static int isSafeToPerformEvictions(void) {
-    /* - There must be no script in timeout condition.
-     * - Nor we are loading data right now.  */
+    /* 没有lua脚本执行超时，也没有在做数据超时 */
     if (server.lua_timedout || server.loading) return 0;
 
-    /* By default replicas should ignore maxmemory
-     * and just be masters exact copies. */
+    /* 只有master才需要做evict */
     if (server.masterhost && server.repl_slave_ignore_maxmemory) return 0;
 
-    /* When clients are paused the dataset should be static not just from the
-     * POV of clients not being able to write, but also from the POV of
-     * expires and evictions of keys not being performed. */
+    /* 当客户端暂停时，不需要evict，因为数据是不会变化的 */
     if (checkClientPauseTimeoutAndReturnIfPaused()) return 0;
 
     return 1;
