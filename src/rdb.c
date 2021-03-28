@@ -1348,7 +1348,7 @@ werr: /* Write error. */
     return C_ERR;
 }
 
-/* Save the DB on disk. Return C_ERR on error, C_OK on success. */
+/* rdb磁盘写入操作 */
 int rdbSave(char *filename, rdbSaveInfo *rsi) {
     char tmpfile[256];
     char cwd[MAXPATHLEN]; /* Current working dir path for error messages. */
@@ -1369,25 +1369,24 @@ int rdbSave(char *filename, rdbSaveInfo *rsi) {
         return C_ERR;
     }
 
-    rioInitWithFile(&rdb,fp);
+    rioInitWithFile(&rdb,fp);  // 初始化rio，
     startSaving(RDBFLAGS_NONE);
 
     if (server.rdb_save_incremental_fsync)
         rioSetAutoSync(&rdb,REDIS_AUTOSYNC_BYTES);
-
+    // 内存数据dump到rdb 
     if (rdbSaveRio(&rdb,&error,RDBFLAGS_NONE,rsi) == C_ERR) {
         errno = error;
         goto werr;
     }
 
-    /* Make sure data will not remain on the OS's output buffers */
+    /* 把数据刷到磁盘删，确保操作系统缓冲区没有剩余数据 */
     if (fflush(fp)) goto werr;
     if (fsync(fileno(fp))) goto werr;
     if (fclose(fp)) { fp = NULL; goto werr; }
     fp = NULL;
     
-    /* Use RENAME to make sure the DB file is changed atomically only
-     * if the generate DB file is ok. */
+    /* 把临时文件重命名为正式文件名 */
     if (rename(tmpfile,filename) == -1) {
         char *cwdp = getcwd(cwd,MAXPATHLEN);
         serverLog(LL_WARNING,
@@ -1428,7 +1427,7 @@ int rdbSaveBackground(char *filename, rdbSaveInfo *rsi) {
     if ((childpid = redisFork(CHILD_TYPE_RDB)) == 0) {
         int retval;
 
-        /* Child */
+        /* 子进程 */
         redisSetProcTitle("redis-rdb-bgsave");
         redisSetCpuAffinity(server.bgsave_cpulist);
         retval = rdbSave(filename,rsi);
@@ -1437,7 +1436,7 @@ int rdbSaveBackground(char *filename, rdbSaveInfo *rsi) {
         }
         exitFromChild((retval == C_OK) ? 0 : 1);
     } else {
-        /* Parent */
+        /* 父进程 */
         if (childpid == -1) {
             server.lastbgsave_status = C_ERR;
             serverLog(LL_WARNING,"Can't save in background: fork: %s",
@@ -2854,6 +2853,7 @@ int rdbSaveToSlavesSockets(rdbSaveInfo *rsi) {
 }
 
 void saveCommand(client *c) {
+    // 检查是否后台已经有进程在执行save，如果有就停止执行。
     if (server.child_type == CHILD_TYPE_RDB) {
         addReplyError(c,"Background save already in progress");
         return;
@@ -2889,7 +2889,7 @@ void bgsaveCommand(client *c) {
         addReplyError(c,"Background save already in progress");
     } else if (hasActiveChildProcess()) {
         if (schedule) {
-            server.rdb_bgsave_scheduled = 1;
+            server.rdb_bgsave_scheduled = 1;  // 如果bgsave已经在执行中了，这次执行会放到serverCron中执行
             addReplyStatus(c,"Background saving scheduled");
         } else {
             addReplyError(c,
