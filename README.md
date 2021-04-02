@@ -14,6 +14,16 @@ Redis中文注解版
 Redis中文注解版仓库：[https://github.com/xindoo/redis](https://github.com/xindoo/redis)    
 Redis源码剖析专栏：[https://blog.csdn.net/xindoo/category_10068113.html](https://blog.csdn.net/xindoo/category_10068113.html)   
 
+## 目前已完成的内容
+[Redis源码剖析之内存淘汰策略(Evict)](https://xindoo.blog.csdn.net/article/details/114239967)  
+[Redis源码剖析之数据过期(expire)](https://xindoo.blog.csdn.net/article/details/113078136)  
+[Redis源码剖析之robj(redisObject)](https://xindoo.blog.csdn.net/article/details/112449822)  
+[Redis源码剖析之字典(dict)](https://xindoo.blog.csdn.net/article/details/110716234)    
+[Redis源码剖析之跳表(skiplist)](https://xindoo.blog.csdn.net/article/details/109922390)  
+[Redis源码剖析之快速列表(quicklist)](https://xindoo.blog.csdn.net/article/details/109150975)  
+[Redis源码剖析之压缩列表(ziplist)](https://xindoo.blog.csdn.net/article/details/108923557)  
+[Redis源码剖析之SDS(Simple Dynamic String)](https://xindoo.blog.csdn.net/article/details/108808273)   
+[Redis源码剖析之RDB](https://xindoo.blog.csdn.net/article/details/115287396)   
 ## 内容规划&更新计划  
 目前暂定的内容规划如下，后期可能会但我自己进度适当增删调整内容，**每月更新2-4篇**。
 
