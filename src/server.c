@@ -2449,7 +2449,7 @@ void beforeSleep(struct aeEventLoop *eventLoop) {
      * client side caching protocol in broadcasting (BCAST) mode. */
     trackingBroadcastInvalidationMessages();
 
-    /* Write the AOF buffer on disk */
+    /* aof缓冲区数据刷到磁盘上*/
     if (server.aof_state == AOF_ON)
         flushAppendOnlyFile(0);
 

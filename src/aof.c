@@ -611,7 +611,7 @@ void feedAppendOnlyFile(struct redisCommand *cmd, int dictid, robj **argv, int a
 
     if (cmd->proc == expireCommand || cmd->proc == pexpireCommand ||
         cmd->proc == expireatCommand) {
-        /* Translate EXPIRE/PEXPIRE/EXPIREAT into PEXPIREAT */
+        /* 把 EXPIRE/PEXPIRE/EXPIREAT 命令转化为 PEXPIREAT 命令*/
         buf = catAppendOnlyExpireAtCommand(buf,cmd,argv[1],argv[2]);
     } else if (cmd->proc == setCommand && argc > 3) {
         robj *pxarg = NULL;
@@ -620,9 +620,7 @@ void feedAppendOnlyFile(struct redisCommand *cmd, int dictid, robj **argv, int a
         if (!strcasecmp(argv[3]->ptr, "px")) {
             pxarg = argv[4];
         }
-        /* For AOF we convert SET key value relative time in milliseconds to SET key value absolute time in
-         * millisecond. Whenever the condition is true it implies that original SET has been transformed
-         * to SET PX with millisecond time argument so we do not need to worry about unit here.*/
+        /* 把set命令的expired所带的相对时间转化为绝对时间(ms). */
         if (pxarg) {
             robj *millisecond = getDecodedObject(pxarg);
             long long when = strtoll(millisecond->ptr,NULL,10);
@@ -642,22 +640,16 @@ void feedAppendOnlyFile(struct redisCommand *cmd, int dictid, robj **argv, int a
             buf = catAppendOnlyGenericCommand(buf,argc,argv);
         }
     } else {
-        /* All the other commands don't need translation or need the
-         * same translation already operated in the command vector
-         * for the replication itself. */
+        /* 其他的命令都不需要转化 */
         buf = catAppendOnlyGenericCommand(buf,argc,argv);
     }
 
-    /* Append to the AOF buffer. This will be flushed on disk just before
-     * of re-entering the event loop, so before the client will get a
-     * positive reply about the operation performed. */
+    /* 追加到AOF缓冲区。在重新进入事件循环之前，数据将被刷新到磁盘上，因此在客户端在执行前就会得到回复。*/
     if (server.aof_state == AOF_ON)
         server.aof_buf = sdscatlen(server.aof_buf,buf,sdslen(buf));
 
-    /* If a background append only file rewriting is in progress we want to
-     * accumulate the differences between the child DB and the current one
-     * in a buffer, so that when the child process will do its work we
-     * can append the differences to the new append only file. */
+    /* 如果后台正在进行AOF重写，我们希望将子数据库和当前数据库之间的差异累积到缓冲区中，
+     * 以便在子进程执行其工作时，我们可以将这些差异追加到新的只追加文件中。 */
     if (server.child_type == CHILD_TYPE_AOF)
         aofRewriteBufferAppend((unsigned char*)buf,sdslen(buf));
 

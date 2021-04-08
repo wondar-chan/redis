@@ -24,6 +24,7 @@ Redis源码剖析专栏：[https://blog.csdn.net/xindoo/category_10068113.html](
 [Redis源码剖析之压缩列表(ziplist)](https://xindoo.blog.csdn.net/article/details/108923557)  
 [Redis源码剖析之SDS(Simple Dynamic String)](https://xindoo.blog.csdn.net/article/details/108808273)   
 [Redis源码剖析之RDB](https://xindoo.blog.csdn.net/article/details/115287396)   
+[Redis源码剖析之AOF](https://blog.csdn.net/xindoo/article/details/115447240)  
 ## 内容规划&更新计划  
 目前暂定的内容规划如下，后期可能会但我自己进度适当增删调整内容，**每月更新2-4篇**。
 
@@ -40,7 +41,7 @@ Redis源码剖析专栏：[https://blog.csdn.net/xindoo/category_10068113.html](
 - [x] [quicklist](https://xindoo.blog.csdn.net/article/details/109150975)
 - [x] [skiplist](https://xindoo.blog.csdn.net/article/details/109922390) 
 - [x] [dict](https://xindoo.blog.csdn.net/article/details/110716234)
-- [ ] robj   
+- [x] robj   
 - [ ] geo 
 - [ ] 队列   
 - [ ] radix树  
@@ -66,9 +67,9 @@ Redis源码剖析专栏：[https://blog.csdn.net/xindoo/category_10068113.html](
 - [ ] RESP协议  
 
 ### 其他
-- [ ] 数据数据淘汰之LRU和LFU  
-- [ ] redis渐进式hash详解  
-- [ ] redis数据过期(惰性删除)  
+- [x] 数据数据淘汰之LRU和LFU  
+- [x] redis渐进式hash详解  
+- [x] redis数据过期(惰性删除)  
 - [ ] 分布式锁 redlock  
 - [ ] Redis基于引用计数的垃圾回收 
 - [ ] redis使用注意事项  
