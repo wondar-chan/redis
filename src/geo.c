@@ -39,11 +39,11 @@ unsigned char *zzlFirstInRange(unsigned char *zl, zrangespec *range);
 int zslValueLteMax(double value, zrangespec *spec);
 
 /* ====================================================================
- * This file implements the following commands:
+ * 这个文件实现了如下命令:
  *
- *   - geoadd - add coordinates for value to geoset
- *   - georadius - search radius by coordinates in geoset
- *   - georadiusbymember - search radius based on geoset member position
+ *   - geoadd - 在geoset中添加一个坐标 
+ *   - georadius - 根据用户给定的经纬度坐标来获取指定范围内的地理位置集合 
+ *   - georadiusbymember - 根据储存在位置集合里面的某个地点获取指定范围内的地理位置集合
  * ==================================================================== */
 
 /* ====================================================================
@@ -354,7 +354,7 @@ int membersOfGeoHashBox(robj *zobj, GeoHashBits hash, geoArray *ga, GeoShape *sh
     return geoGetPointsInRange(zobj, min, max, shape, ga, limit);
 }
 
-/* Search all eight neighbors + self geohash box */
+/* 搜索所有相邻的8个geohash区间和本区间*/
 int membersOfAllNeighbors(robj *zobj, GeoHashRadius n, GeoShape *shape, geoArray *ga, unsigned long limit) {
     GeoHashBits neighbors[9];
     unsigned int i, count = 0, last_processed = 0;
@@ -439,8 +439,7 @@ void geoaddCommand(client *c) {
     int xx = 0, nx = 0, longidx = 2;
     int i;
 
-    /* Parse options. At the end 'longidx' is set to the argument position
-     * of the longitude of the first element. */
+    /* 解析可选参数 */
     while (longidx < c->argc) {
         char *opt = c->argv[longidx]->ptr;
         if (!strcasecmp(opt,"nx")) nx = 1;
@@ -451,12 +450,12 @@ void geoaddCommand(client *c) {
     }
 
     if ((c->argc - longidx) % 3 || (xx && nx)) {
-        /* Need an odd number of arguments if we got this far... */
+        /* 解析所有的经纬度值和member，并对其个数做校验 */
             addReplyErrorObject(c,shared.syntaxerr);
         return;
     }
 
-    /* Set up the vector for calling ZADD. */
+    /* 构建zadd的参数数组 */
     int elements = (c->argc - longidx) / 3;
     int argc = longidx+elements*2; /* ZADD key [CH] [NX|XX] score ele ... */
     robj **argv = zcalloc(argc*sizeof(robj*));
@@ -466,9 +465,7 @@ void geoaddCommand(client *c) {
         incrRefCount(argv[i]);
     }
 
-    /* Create the argument vector to call ZADD in order to add all
-     * the score,value pairs to the requested zset, where score is actually
-     * an encoded version of lat,long. */
+    /* 以3个参数为一组，将所有的经纬度和member信息从参数列表里解析出来，并放到zadd的参数数组中 */
     for (i = 0; i < elements; i++) {
         double xy[2];
 
@@ -479,7 +476,7 @@ void geoaddCommand(client *c) {
             return;
         }
 
-        /* Turn the coordinates into the score of the element. */
+        /* 将经纬度坐标转化成score信息 */
         GeoHashBits hash;
         geohashEncodeWGS84(xy[0], xy[1], GEO_STEP_MAX, &hash);
         GeoHashFix52Bits bits = geohashAlign52Bits(hash);
@@ -490,7 +487,7 @@ void geoaddCommand(client *c) {
         incrRefCount(val);
     }
 
-    /* Finally call ZADD that will do the work for us. */
+    /* 转化成zadd命令所需要的参数格式*/
     replaceClientCommandVector(c,argc,argv);
     zaddCommand(c);
 }
@@ -517,14 +514,14 @@ void georadiusGeneric(client *c, int srcKeyIndex, int flags) {
     robj *storekey = NULL;
     int storedist = 0; /* 0 for STORE, 1 for STOREDIST. */
 
-    /* Look up the requested zset */
+    /* 根据key找找到对应的zojb */
     robj *zobj = NULL;
     if ((zobj = lookupKeyReadOrReply(c, c->argv[srcKeyIndex], shared.emptyarray)) == NULL ||
         checkType(c, zobj, OBJ_ZSET)) {
         return;
     }
 
-    /* Find long/lat to use for radius or box search based on inquiry type */
+    /* 解析请求中的经纬度值 */
     int base_args;
     GeoShape shape = {0};
     if (flags & RADIUS_COORDS) {
@@ -552,7 +549,7 @@ void georadiusGeneric(client *c, int srcKeyIndex, int flags) {
         return;
     }
 
-    /* Discover and populate all optional parameters. */
+    /* 解析所有的可选参数. */
     int withdist = 0, withhash = 0, withcoords = 0;
     int frommember = 0, fromloc = 0, byradius = 0, bybox = 0;
     int sort = SORT_NONE;
@@ -682,14 +679,16 @@ void georadiusGeneric(client *c, int srcKeyIndex, int flags) {
      * requested. Note that this is not needed for ANY option. */
     if (count != 0 && sort == SORT_NONE && !any) sort = SORT_ASC;
 
-    /* Get all neighbor geohash boxes for our radius search */
+    /* Get all neighbor geohash boxes for our radius search
+     * 获取到要查找范围内所有的9个geo邻域 */
     GeoHashRadius georadius = geohashCalculateAreasByShapeWGS84(&shape);
 
     /* Search the zset for all matching points */
     geoArray *ga = geoArrayCreate();
+    /* 扫描9个区域中是否有满足条的点，有就放到geoArray中 */
     membersOfAllNeighbors(zobj, georadius, &shape, ga, any ? count : 0);
 
-    /* If no matching results, the user gets an empty reply. */
+    /* 如果没有匹配结果，返回空对象 */
     if (ga->used == 0 && storekey == NULL) {
         addReply(c,shared.emptyarray);
         geoArrayFree(ga);
@@ -835,7 +834,7 @@ void geosearchstoreCommand(client *c) {
     georadiusGeneric(c, 2, GEOSEARCH|GEOSEARCHSTORE);
 }
 
-/* GEOHASH key ele1 ele2 ... eleN
+/* 计算geohash值，返回11位长的geohash值
  *
  * Returns an array with an 11 characters geohash representation of the
  * position of the specified elements. */
@@ -882,9 +881,7 @@ void geohashCommand(client *c) {
             for (i = 0; i < 11; i++) {
                 int idx;
                 if (i == 10) {
-                    /* We have just 52 bits, but the API used to output
-                     * an 11 bytes geohash. For compatibility we assume
-                     * zero. */
+                    /* 需要55bits生成11位的geohash，这里只有52位，用0补齐*/
                     idx = 0;
                 } else {
                     idx = (hash.bits >> (52-((i+1)*5))) & 0x1f;
