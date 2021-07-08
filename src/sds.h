@@ -82,6 +82,8 @@ struct __attribute__ ((__packed__)) sdshdr64 {
 #define SDS_TYPE_64 4
 #define SDS_TYPE_MASK 7
 #define SDS_TYPE_BITS 3
+//##符合用于连接两个前后两个参数，把它们变成一个字符串
+//如果T=8 那么*sh就是sdshdr8类型了 这样可以动态计算sh
 #define SDS_HDR_VAR(T,s) struct sdshdr##T *sh = (void*)((s)-(sizeof(struct sdshdr##T)));
 // 这个宏定义直接推算出sdshdr头部的内存地址
 #define SDS_HDR(T,s) ((struct sdshdr##T *)((s)-(sizeof(struct sdshdr##T))))
