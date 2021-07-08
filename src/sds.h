@@ -46,6 +46,14 @@ typedef char *sds;
  * 不同的数据类型，以达到节省内存的目的。  
  *  
  * 注意:sdshdr5从未被使用过，我们只是直接访问flag。但是，这里记录下sdshdr5的结构。 */
+/**
+ * __attribute__ ((__packed__)) 指定了内存分配方式 取消字节对齐 采用紧凑的方式
+ * 如果不采用紧凑的方式 编译器会自动把结构体补充到字长的整数倍 如sdshdr8 
+ * 在32位机,会在flags和char buf[]之间会增加一个8位的pad空间 以补足字长整数倍
+ * 而sdshdr16则会补24位 这样要取flags字段就不方便了,
+ * 因为redis的字符串指针指向char buf[] 紧凑情况下字符串指针-1就是flags了
+ * 而且内存也浪费了
+ * */
 struct __attribute__ ((__packed__)) sdshdr5 {
     unsigned char flags; /* 3 lsb of type, and 5 msb of string length */
     char buf[];
@@ -90,6 +98,8 @@ struct __attribute__ ((__packed__)) sdshdr64 {
 #define SDS_TYPE_5_LEN(f) ((f)>>SDS_TYPE_BITS)
 
 // 获取sds的长度  
+//static 静态方法 仅仅在本文件中调用
+//inline 内联函数 如果一个函数被编译成inline的话，那么就会把函数里面的代码直接插入到调用这个函数的地方，而不是用调用函数的形式
 static inline size_t sdslen(const sds s) {
     unsigned char flags = s[-1];  // -1 相当于获取到了sdshdr中的flag字段  
     switch(flags&SDS_TYPE_MASK) {   // SDS_TYPE_MASK = 7

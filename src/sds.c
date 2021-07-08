@@ -267,15 +267,20 @@ sds sdsMakeRoomFor(sds s, size_t addlen) {
     if (oldtype==type) {
         newsh = s_realloc_usable(sh, hdrlen+newlen+1, &usable);
         if (newsh == NULL) return NULL;
+        //s继续指向char buf[]位置
         s = (char*)newsh+hdrlen;
     } else {
         // 扩容其实就是申请新的空间，然后把旧数据挪过去  
         newsh = s_malloc_usable(hdrlen+newlen+1, &usable);
         if (newsh == NULL) return NULL;
+        //todo 为什么len要加1 len是sdshdr中的len成员 
+        //len = char buf[]长度 - 1  char buf[]最后一个是结束符
+        //应该是为了打印 这样就可以打印到最后一个元素了
         memcpy((char*)newsh+hdrlen, s, len+1);
         s_free(sh);
         s = (char*)newsh+hdrlen;
         s[-1] = type;
+        //重新分配len的值 主要是为了特殊处理sdshdr5的情况
         sdssetlen(s, len);
     }
     usable = usable-hdrlen-1;
