@@ -46,10 +46,10 @@
 #include "zmalloc.h"
 #include "config.h"
 
-/* ae.c里封装了不同操作系统的IO多路复用机制，通过条件编译的方式编译不同的多路复用库
- * redis优先会考虑使用evport,然后才是epoll，再是kqueue，最后才是select，从前到后
- * 性能逐渐变差，当然有些IO复用是在特殊平台才独有的，比如kqueue用于freebsd系统，目前
- * mac系统上用的就是kqueue。*/
+/* ae.c里封装了不同操作系统的IO多路复用机制,通过条件编译的方式编译不同的多路复用库
+ * redis优先会考虑使用evport,然后才是epoll,再是kqueue,最后才是select,从前到后
+ * 性能逐渐变差,当然有些IO复用是在特殊平台才独有的,比如kqueue用于freebsd系统,目前
+ * mac系统上用的就是kqueue*/
 
 #ifdef HAVE_EVPORT
 #include "ae_evport.c"
@@ -156,8 +156,8 @@ void aeDeleteEventLoop(aeEventLoop *eventLoop) {
 void aeStop(aeEventLoop *eventLoop) {
     eventLoop->stop = 1;
 }
-/* fd事件监听的统一注册入口，最开始监听了redis端口的fd，有新的连接进来是其fd也会被加进来
- * 另外这里还有aof和rdb的异步时间，后端依赖于不同的aeApiAddEvent实现 */
+/* fd事件监听的统一注册入口,最开始监听了redis端口的fd,有新的连接进来是其fd也会被加进来
+ * 另外这里还有aof和rdb的异步时间,后端依赖于不同的aeApiAddEvent实现 */
 int aeCreateFileEvent(aeEventLoop *eventLoop, int fd, int mask,
         aeFileProc *proc, void *clientData)
 {
@@ -206,7 +206,12 @@ int aeGetFileEvents(aeEventLoop *eventLoop, int fd) {
 
     return fe->mask;
 }
-
+/*
+进行定时器的注册 aeTimeProc 是当超时事件触发时调用的callback 
+aeTimeProc需要返回一个int值, 代表下次该超时事件触发的时间间隔 
+如果返回-1,则说明超时时间不需要再触发了,标记为删除即可
+finalizerProc 当 timer 被删除的时候,会调用这个 callback
+*/
 long long aeCreateTimeEvent(aeEventLoop *eventLoop, long long milliseconds,
         aeTimeProc *proc, void *clientData,
         aeEventFinalizerProc *finalizerProc)
@@ -258,18 +263,20 @@ static long msUntilEarliestTimer(aeEventLoop *eventLoop) {
 
     aeTimeEvent *earliest = NULL;
     while (te) {
+        //找出定时任务链表中最早要触发的任务
         if (!earliest || te->when < earliest->when)
             earliest = te;
         te = te->next;
     }
 
     monotime now = getMonotonicUs();
+    //返回最早要触发的任务的触发时间离现在的时间差
     return (now >= earliest->when)
             ? 0 : (long)((earliest->when - now) / 1000);
 }
 
-/* 执行时间事件，时间事件直接存放在了aeEventLoop->timeEventHead双链表中，执行的过程
- * 就是遍历链表，只执行到了或这超过预定时间的是时间事件.
+/* 执行时间事件,时间事件直接存放在了aeEventLoop->timeEventHead双链表中,执行的过程
+ * 就是遍历链表,只执行到了或这超过预定时间的是时间事件.
  * 函数返回值是执行了多少时间事件*/
 static int processTimeEvents(aeEventLoop *eventLoop) {
     int processed = 0;
@@ -313,7 +320,7 @@ static int processTimeEvents(aeEventLoop *eventLoop) {
          * add new timers on the head, however if we change the implementation
          * detail, this check may be useful again: we keep it here for future
          * defense.
-         * 这里确保timeEvent执行过程中创建的timeEvent不被执行，确保timeEvent链表不会爆掉 */
+         * 这里确保timeEvent执行过程中创建的timeEvent不被执行,确保timeEvent链表不会爆掉 */
         if (te->id > maxId) {
             te = te->next;
             continue;
@@ -356,11 +363,22 @@ static int processTimeEvents(aeEventLoop *eventLoop) {
  * if flags has AE_CALL_BEFORE_SLEEP set, the beforesleep callback is called.
  *
  * The function returns the number of events processed. */
+/* redis 是一个事件驱动型的设计模式 会循环调用时间事件
+* (如cycle 之前提到的过期键的处理) 然后还有文件事件(其实就是处理客户端的请求)
+* 每次循环完还有一些回调的策略方法放在我们的beforesleep,aftersleep 里面
+* 处理file event的过程
+* 1.我们先调用到aeApiPoll,获取需要被处理的event个数,
+* 2.我们传入的eventloop 里面放入了需要被处理的事件
+* 3.遍历eventloop里面的每一项
+* 4.对于可读事件调用read handler 来处理
+* 5.对于可写事件调用write handler 来处理
+* 上面还有一些回滚的处理流程,这个再后续功能模块再继续讨论
+*/
 int aeProcessEvents(aeEventLoop *eventLoop, int flags)
 {
     int processed = 0, numevents;
 
-    /* 如果flag位既不是时间事件，又不是文件事件，返回0 */
+    /* 如果flag位既不是时间事件,又不是文件事件,返回0 */
     if (!(flags & AE_TIME_EVENTS) && !(flags & AE_FILE_EVENTS)) return 0;
 
     /* Note that we want to call select() even if there are no
@@ -373,6 +391,8 @@ int aeProcessEvents(aeEventLoop *eventLoop, int flags)
         struct timeval tv, *tvp;
         long msUntilTimer = -1;
 
+        //计算apiPoll的等待时间 如果eventLoop的timeEvent链表里面很快有需要触发的任务
+        //则用apiPoll的超时时间为触发时间点-now
         if (flags & AE_TIME_EVENTS && !(flags & AE_DONT_WAIT))
             msUntilTimer = msUntilEarliestTimer(eventLoop);
 
@@ -492,7 +512,8 @@ int aeWait(int fd, int mask, long long milliseconds) {
         return retval;
     }
 }
-
+// initServer()中调用aeCreateEventLoop()初始化aeEventLoop
+//初始化server后调用aeMain进行接受请求
 void aeMain(aeEventLoop *eventLoop) {
     eventLoop->stop = 0;
     while (!eventLoop->stop) {
