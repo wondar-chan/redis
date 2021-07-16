@@ -1113,6 +1113,7 @@ void acceptTcpHandler(aeEventLoop *el, int fd, void *privdata, int mask) {
         anetCloexec(cfd);
         serverLog(LL_VERBOSE,"Accepted %s:%d", cip, cport);
         // 处理请求 
+        //把这个socket封装到一个client结构体中,并为这个socket或者说这个client注册一个读回调函数—readQueryFromClient
         acceptCommonHandler(connCreateAcceptedSocket(cfd),0,cip);
     }
 }
