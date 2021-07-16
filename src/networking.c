@@ -1096,7 +1096,13 @@ void acceptTcpHandler(aeEventLoop *el, int fd, void *privdata, int mask) {
     UNUSED(mask);
     UNUSED(privdata);
 
+    /**
+     * 为了处理多个连接同时到达的场景,比如有十个连接同时到达等待应用层调用accept
+     * 这样通过一个while循环就可以依次处理这十个连接,直到返回一个ANET_ERR错误
+     * 一次调用最多可以处理MAX_ACCEPTS_PER_CALL(1000)个连接
+     * */
     while(max--) {
+        //接受tcp连接 anetTcpAccept函数会返回一个fd(socket)
         cfd = anetTcpAccept(server.neterr, fd, cip, sizeof(cip), &cport);
         if (cfd == ANET_ERR) {
             if (errno != EWOULDBLOCK)

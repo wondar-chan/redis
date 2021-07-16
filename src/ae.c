@@ -157,7 +157,9 @@ void aeStop(aeEventLoop *eventLoop) {
     eventLoop->stop = 1;
 }
 /* fd事件监听的统一注册入口,最开始监听了redis端口的fd,有新的连接进来是其fd也会被加进来
- * 另外这里还有aof和rdb的异步时间,后端依赖于不同的aeApiAddEvent实现 */
+ * 另外这里还有aof和rdb的异步时间,后端依赖于不同的aeApiAddEvent实现 
+ aeFileProc函数是有可读/可写事件时的处理函数
+ */
 int aeCreateFileEvent(aeEventLoop *eventLoop, int fd, int mask,
         aeFileProc *proc, void *clientData)
 {

@@ -42,10 +42,11 @@
 #define AE_READABLE 1   /* Fire when descriptor is readable. */
 #define AE_WRITABLE 2   /* Fire when descriptor is writable. */
 #define AE_BARRIER 4    /* With WRITABLE, never fire the event if the
-                           READABLE event already fired in the same event
-                           loop iteration. Useful when you want to persist
-                           things to disk before sending replies, and want
-                           to do that in a group fashion. */
+                        /* READABLE event already fired in the same event
+                        /* loop iteration. Useful when you want to persist
+                        /* things to disk before sending replies, and want
+                        /* to do that in a group fashion.
+                        有AE_BARRIER的事件 代表先写后读 */
 
 #define AE_FILE_EVENTS (1<<0)  // redis将事件分为时间事件和文件事件，通过flag位来标识
 #define AE_TIME_EVENTS (1<<1)
@@ -106,8 +107,8 @@ typedef struct aeTimeEvent {
 /* A fired event */
 //这里用于保存已触发的事件
 typedef struct aeFiredEvent {
-    int fd;
-    int mask;
+    int fd;     //apiPoll中赋值
+    int mask;   //apiPoll中赋值
 } aeFiredEvent;
 
 /* State of an event based program */
