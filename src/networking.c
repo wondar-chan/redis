@@ -119,6 +119,7 @@ client *createClient(connection *conn) {
         connEnableTcpNoDelay(conn);
         if (server.tcpkeepalive)
             connKeepAlive(conn,server.tcpkeepalive);
+        //readQueryFromClient 处理客户端请求的函数
         connSetReadHandler(conn, readQueryFromClient);
         connSetPrivateData(conn, c);
     }
@@ -1057,6 +1058,7 @@ static void acceptCommonHandler(connection *conn, int flags, char *ip) {
     }
 
     /* Create connection and client */
+    //封装client对象 createClient会把readQueryFromClient函数绑定到client
     if ((c = createClient(conn)) == NULL) {
         serverLog(LL_WARNING,
             "Error registering fd event for the new client: %s (conn: %s)",
@@ -1113,7 +1115,9 @@ void acceptTcpHandler(aeEventLoop *el, int fd, void *privdata, int mask) {
         anetCloexec(cfd);
         serverLog(LL_VERBOSE,"Accepted %s:%d", cip, cport);
         // 处理请求 
-        //把这个socket封装到一个client结构体中,并为这个socket或者说这个client注册一个读回调函数—readQueryFromClient
+        //connCreateAcceptedSocket把这个socket封装到一个connection
+        //acceptCommonHandler把connection封装到client结构体中
+        //并为这个socket或者说这个client注册一个读回调函数—readQueryFromClient
         acceptCommonHandler(connCreateAcceptedSocket(cfd),0,cip);
     }
 }

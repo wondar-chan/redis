@@ -3131,7 +3131,9 @@ void initServer(void) {
     /* Initialization after setting defaults from the config system. */
     server.aof_state = server.aof_enabled ? AOF_ON : AOF_OFF;
     server.hz = server.config_hz;
+    //记录程序进程 ID
     server.pid = getpid();
+
     server.in_fork_child = CHILD_TYPE_NONE;
     server.main_thread_id = pthread_self();
     server.current_client = NULL;
@@ -3167,6 +3169,8 @@ void initServer(void) {
     adjustOpenFilesLimit();
     const char *clk_msg = monotonicInit();
     serverLog(LL_NOTICE, "monotonic clock: %s", clk_msg);
+
+    //创建程序的 aeEventLoop 对象和 epfd 对象
     server.el = aeCreateEventLoop(server.maxclients+CONFIG_FDSET_INCR);
     if (server.el == NULL) {
         serverLog(LL_WARNING,
@@ -3177,6 +3181,7 @@ void initServer(void) {
     server.db = zmalloc(sizeof(redisDb)*server.dbnum);
 
     /* Open the TCP listening socket for the user commands. */
+    //创建侦听 fd
     if (server.port != 0 &&
         listenToPort(server.port,server.ipfd,&server.ipfd_count) == C_ERR)
         exit(1);
@@ -3193,6 +3198,7 @@ void initServer(void) {
             serverLog(LL_WARNING, "Opening Unix socket: %s", server.neterr);
             exit(1);
         }
+        //将侦听 fd 设置为非阻塞的
         anetNonBlock(NULL,server.sofd);
         anetCloexec(server.sofd);
     }
@@ -3266,6 +3272,7 @@ void initServer(void) {
     server.aof_last_write_errno = 0;
     server.repl_good_slaves_count = 0;
 
+    //创建 Redis 的定时器，用于执行定时任务 cron
     /* Create the timer callback, this is our way to process many background
      * operations incrementally, like clients timeout, eviction of unaccessed
      * expired keys and so forth. */
@@ -3276,7 +3283,8 @@ void initServer(void) {
 
     /* Create an event handler for accepting new connections in TCP and Unix
      * domain sockets. */
-    /* TCP新连接是可以读事件，这里指定了处理TCP连接的handler为acceptTcpHandler函数*/ 
+    /* TCP新连接是可以读事件，这里指定了处理TCP连接的handler为acceptTcpHandler函数*/
+    //将侦听 fd 绑定到 epfd 上去
     for (j = 0; j < server.ipfd_count; j++) {
         if (aeCreateFileEvent(server.el, server.ipfd[j], AE_READABLE,
             acceptTcpHandler,NULL) == AE_ERR)
@@ -3297,6 +3305,7 @@ void initServer(void) {
         acceptUnixHandler,NULL) == AE_ERR) serverPanic("Unrecoverable error creating server.sofd file event.");
 
 
+    //创建一个管道，用于在需要时去唤醒 epoll_wait 挂起的整个 EventLoop
     /* Register a readable event for the pipe used to awake the event loop
      * when a blocked client in a module needs attention. */
     if (aeCreateFileEvent(server.el, server.module_blocked_pipe[0], AE_READABLE,

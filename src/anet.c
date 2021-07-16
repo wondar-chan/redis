@@ -567,6 +567,15 @@ int anetUnixServer(char *err, char *path, mode_t perm, int backlog)
 static int anetGenericAccept(char *err, int s, struct sockaddr *sa, socklen_t *len) {
     int fd;
     while(1) {
+        /*socket的api 
+        * int accept(int sockfd, struct sockaddr *addr, socklen_t *addrlen);
+        * socket文件描述符
+        * sockdf:
+        * addr:
+        * 传出参数,返回链接客户端地址信息,含IP地址和端口号
+        * addrlen:
+        * 传入传出参数(值-结果),传入sizeof(addr)大小,函数返回时返回真正接收到地址结构体的大小
+        */
         fd = accept(s,sa,len);
         if (fd == -1) {
             if (errno == EINTR)
@@ -585,14 +594,20 @@ int anetTcpAccept(char *err, int s, char *ip, size_t ip_len, int *port) {
     int fd;
     struct sockaddr_storage sa;
     socklen_t salen = sizeof(sa);
+    /*anetGenericAccept会调用accept方法接受socket传过来的数据
+    * s:socket文件描述符 sa:传出参数,返回链接客户端地址信息,含IP地址和端口号
+    * salen:传入传出参数(值-结果),传入sizeof(addr)大小,函数返回时返回真正接收到地址结构体的大小 
+    */
     if ((fd = anetGenericAccept(err,s,(struct sockaddr*)&sa,&salen)) == -1)
         return ANET_ERR;
 
+    //AF_INET表示使用IPv4
     if (sa.ss_family == AF_INET) {
         struct sockaddr_in *s = (struct sockaddr_in *)&sa;
-        if (ip) inet_ntop(AF_INET,(void*)&(s->sin_addr),ip,ip_len);
-        if (port) *port = ntohs(s->sin_port);
+        if (ip) inet_ntop(AF_INET,(void*)&(s->sin_addr),ip,ip_len);//将ip地址从数字格式转为字符串
+        if (port) *port = ntohs(s->sin_port);//将参数指定的16 位netshort 转换成主机字符顺序.
     } else {
+        //IPv6的处理
         struct sockaddr_in6 *s = (struct sockaddr_in6 *)&sa;
         if (ip) inet_ntop(AF_INET6,(void*)&(s->sin6_addr),ip,ip_len);
         if (port) *port = ntohs(s->sin6_port);
